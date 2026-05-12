@@ -557,7 +557,21 @@
             };
 
             const processType = processMap[area];
-            const nextNumber = (counters[area] || 0) + 1;
+            const areaDocs = documents.filter(doc => doc.area === area);
+
+            let maxNumber = 0;
+            
+            areaDocs.forEach(doc => {
+                const match = doc.codigo.match(/(\d+)$/);
+                if (match) {
+                    const num = parseInt(match[1]);
+                    if (num > maxNumber) {
+                        maxNumber = num;
+                    }
+                }
+            });
+            
+            const nextNumber = maxNumber + 1;
             const code = `${processType}-${area}-FO-${String(nextNumber).padStart(3, '0')}`;
             
             document.getElementById('codigo').value = code;
