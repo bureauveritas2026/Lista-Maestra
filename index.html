@@ -657,11 +657,22 @@
         // Eliminar documento
         function deleteDocument(id) {
             if (!confirm('¿Estás seguro de eliminar este documento?')) return;
-
+        
+            // Eliminar documento
             documents = documents.filter(doc => doc.id !== id);
+        
+            // Reiniciar contadores
+            counters = {};
+        
+            // Recalcular contadores según documentos existentes
+            documents.forEach(doc => {
+                counters[doc.area] = (counters[doc.area] || 0) + 1;
+            });
+        
             saveToLocalStorage();
             renderTable();
             updateStats();
+        
             showAlert('Documento eliminado', 'warning');
         }
 
