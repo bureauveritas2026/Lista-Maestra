@@ -309,7 +309,12 @@ function renderTable() {
       <td style="color:var(--text-muted);font-weight:600">${i + 1}</td>
       <td><span class="badge ${areaBadge[doc.area] || 'badge-blue'}">${doc.area}</span></td>
       <td style="max-width:260px">
-        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${doc.titulo}">${doc.titulo}</div>
+        <div
+          class="doc-title-cell"
+          style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:context-menu"
+          title="${doc.titulo}"
+          oncontextmenu="showCtxMenu(event,'${doc.titulo.replace(/'/g,"\\'")}')"
+        >${doc.titulo}</div>
       </td>
       <td><span class="badge badge-amber">v${doc.version}</span></td>
       <td><code>${doc.codigo}</code></td>
@@ -473,6 +478,175 @@ function exportJSON() {
   a.click();
   toast("Backup JSON exportado ✓", "success");
 }
+
+/* ============================================================
+   CONTEXT MENU — Nombre completo del documento
+   ============================================================ */
+function showCtxMenu(e, fullName) {
+  e.preventDefault();
+  const menu = document.getElementById("ctxMenu");
+  document.getElementById("ctxMenuText").textContent = fullName;
+  menu.style.display = "block";
+
+  // Position safely within viewport
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const mw = 360, mh = 100;
+  menu.style.left = Math.min(e.clientX + 8, vw - mw - 12) + "px";
+  menu.style.top  = Math.min(e.clientY + 8, vh - mh - 12) + "px";
+
+  const hide = () => { menu.style.display = "none"; document.removeEventListener("click", hide); };
+  setTimeout(() => document.addEventListener("click", hide), 50);
+}
+
+/* ============================================================
+   TAB NAVIGATION
+   ============================================================ */
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    document.getElementById("panelLista").style.display       = tab === "lista"       ? "" : "none";
+    document.getElementById("panelRepositorio").style.display = tab === "repositorio" ? "" : "none";
+  });
+});
+
+/* ============================================================
+   REPOSITORIO DRIVE — Firestore CRUD
+   ============================================================ */
+const REPO_COLLECTION = "repositorio";
+let   repoAllDocs     = [];
+let   repoEditId      = null;
+const typeBadge = { PDF:"badge-red", Word:"badge-blue", Excel:"badge-green", ZIP:"badge-amber", Imagen:"badge-violet", Otro:"badge-blue" };
+
+// Real-time listener
+fsdb.collection(REPO_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snap => {
+  repoAllDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderRepoTable();
+}, err => console.warn("Repo snapshot error:", err));
+
+// Form submit
+document.getElementById("repoForm").onsubmit = async e => {
+  e.preventDefault();
+  const data = {
+    identificador: document.getElementById("repoIdentificador").value.trim(),
+    area:          document.getElementById("repoArea").value,
+    nombre:        document.getElementById("repoNombre").value.trim(),
+    tipo:          document.getElementById("repoTipo").value,
+    fecha:         document.getElementById("repoFecha").value,
+    descripcion:   document.getElementById("repoDescripcion").value.trim(),
+    driveLink:     document.getElementById("repoDriveLink").value.trim(),
+    updatedAt:     Date.now(),
+  };
+  try {
+    if (repoEditId) {
+      await fsdb.collection(REPO_COLLECTION).doc(repoEditId).update(data);
+      toast("Registro actualizado ✓", "success");
+    } else {
+      data.createdAt = Date.now();
+      await fsdb.collection(REPO_COLLECTION).add(data);
+      toast("Archivo registrado ✓", "success");
+    }
+    repoResetForm();
+  } catch (err) { toast("Error: " + err.message, "error"); }
+};
+
+function repoResetForm() {
+  document.getElementById("repoForm").reset();
+  repoEditId = null;
+  document.getElementById("repoFormTitle").textContent  = "Registrar Archivo";
+  document.getElementById("repoSubmitBtn").textContent   = "Registrar Archivo";
+}
+
+async function repoEditDoc(id) {
+  const doc = repoAllDocs.find(d => d.id === id);
+  if (!doc) return;
+  repoEditId = id;
+  document.getElementById("repoIdentificador").value  = doc.identificador || "";
+  document.getElementById("repoArea").value           = doc.area          || "";
+  document.getElementById("repoNombre").value         = doc.nombre        || "";
+  document.getElementById("repoTipo").value           = doc.tipo          || "PDF";
+  document.getElementById("repoFecha").value          = doc.fecha         || "";
+  document.getElementById("repoDescripcion").value    = doc.descripcion   || "";
+  document.getElementById("repoDriveLink").value      = doc.driveLink     || "";
+  document.getElementById("repoFormTitle").textContent = "Editando Archivo";
+  document.getElementById("repoSubmitBtn").textContent = "Guardar Cambios";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function repoDeleteDoc(id) {
+  if (!confirm("\u00bfEliminar este registro del repositorio?")) return;
+  try {
+    await fsdb.collection(REPO_COLLECTION).doc(id).delete();
+    toast("Eliminado del repositorio", "info");
+  } catch (e) { toast("Error: " + e.message, "error"); }
+}
+
+document.getElementById("repoResetBtn").onclick = repoResetForm;
+
+function getFilteredRepoDocs() {
+  const q    = (document.getElementById("repoSearch")?.value || "").toLowerCase();
+  const area = document.getElementById("repoAreaFilter")?.value || "";
+  const tipo = document.getElementById("repoTipoFilter")?.value || "";
+  return repoAllDocs.filter(d => {
+    const matchQ    = !q    || (d.identificador||"em").toLowerCase().includes(q) || (d.nombre||"").toLowerCase().includes(q) || (d.area||"").toLowerCase().includes(q);
+    const matchArea = !area || d.area === area;
+    const matchTipo = !tipo || d.tipo === tipo;
+    return matchQ && matchArea && matchTipo;
+  });
+}
+
+function renderRepoTable() {
+  const tbody = document.getElementById("repoTableBody");
+  if (!tbody) return;
+  const docs = getFilteredRepoDocs();
+
+  if (!docs.length) {
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12"/></svg><h3>Sin archivos registrados</h3><p>Usa el formulario para agregar archivos de Drive</p></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = docs.map((doc, i) => `
+    <tr class="fade-in">
+      <td style="color:var(--text-muted);font-weight:600">${i + 1}</td>
+      <td><span class="badge badge-violet" style="font-size:.78rem">${doc.identificador || "—"}</span></td>
+      <td><span class="badge ${areaBadgeMap[doc.area] || 'badge-blue'}">${doc.area}</span></td>
+      <td style="max-width:200px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${doc.nombre}" oncontextmenu="showCtxMenu(event,'${(doc.nombre||'').replace(/'/g,"\\'")}')">${doc.nombre}</td>
+      <td><span class="badge ${typeBadge[doc.tipo] || 'badge-blue'}">${doc.tipo}</span></td>
+      <td style="white-space:nowrap">${formatDate(doc.fecha)}</td>
+      <td style="max-width:180px;font-size:.82rem;color:var(--text-muted)">${doc.descripcion || "—"}</td>
+      <td>
+        <a href="${doc.driveLink}" target="_blank" class="btn btn-secondary btn-icon" title="Abrir en Drive" style="font-size:.75rem">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+      </td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-ghost btn-icon" onclick="repoEditDoc('${doc.id}')" title="Editar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon" onclick="repoDeleteDoc('${doc.id}')" title="Eliminar" style="color:var(--c-red)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          </button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+// Shared area badge map (expose for repositorio render)
+const areaBadgeMap = {
+  GG:"badge-blue", GI:"badge-blue",
+  HK:"badge-green", FO:"badge-green", AB:"badge-green",
+  CO:"badge-amber", GR:"badge-amber", MT:"badge-amber",
+  MD:"badge-violet", TH:"badge-violet", TI:"badge-violet",
+};
+
+// Wire repo filters
+["repoSearch", "repoAreaFilter", "repoTipoFilter"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("input", renderRepoTable);
+});
 
 /* ============================================================
    11. AUTO-CODE GENERATOR

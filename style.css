@@ -638,3 +638,61 @@ tbody tr:last-child td { border-bottom: none; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-light); }
+
+/* ---------- TAB NAV ---------- */
+.tab-nav {
+  display: flex;
+  gap: .5rem;
+  margin-bottom: 1.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  padding: .35rem;
+  width: fit-content;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .55rem 1.25rem;
+  border-radius: calc(var(--radius-l) - 4px);
+  font-size: .875rem;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.tab-btn.active {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: white;
+  box-shadow: var(--shadow-m);
+}
+
+.tab-btn:not(.active):hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* ---------- DRIVE BANNER ---------- */
+.drive-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #1e3a8a, #4c1d95);
+  color: white;
+  border-radius: var(--radius-l);
+  padding: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-m);
+}
+
+/* ---------- CONTEXT MENU (tooltip nombre) ---------- */
+#ctxMenu {
+  transition: opacity .15s ease;
+  animation: fadeIn .15s ease;
+}
