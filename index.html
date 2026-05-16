@@ -17,6 +17,7 @@
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <div class="container">
@@ -32,10 +33,13 @@
                 </div>
             </div>
             <div style="display: flex; gap: 1rem; align-items: center;">
-                <div class="live-indicator">
+                <div class="live-indicator" id="syncStatus">
                     <span class="dot"></span>
                     Sincronizado Localmente
                 </div>
+                <button class="btn btn-secondary btn-icon" id="cloudConnectBtn" onclick="openSettings()" title="Conectar a la Nube">
+                    <i data-lucide="cloud"></i>
+                </button>
                 <button class="btn btn-secondary btn-icon" id="themeToggle" onclick="toggleTheme()" title="Cambiar Tema">
                     <i data-lucide="moon"></i>
                 </button>
@@ -164,7 +168,7 @@
                         <button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.5rem;" onclick="document.getElementById('importInput').click()">
                             <i data-lucide="upload-cloud" style="width: 14px;"></i> Importar
                         </button>
-                        <input type="file" id="importInput" hidden accept=".json" onchange="importFromJSON(this.files[0])">
+                        <input type="file" id="importInput" hidden accept=".json,.xlsx,.xls" onchange="handleImport(this.files[0])">
                     </div>
                 </div>
             </aside>
@@ -259,6 +263,58 @@
         db.documentos.hook('creating', () => setTimeout(updateLastChange, 100));
         db.documentos.hook('updating', () => setTimeout(updateLastChange, 100));
         updateLastChange();
+
+        // Import handler
+        function handleImport(file) {
+            if (!file) return;
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext === 'json') {
+                importFromJSON(file);
+            } else if (ext === 'xlsx' || ext === 'xls') {
+                importFromExcel(file);
+            } else {
+                showToast("Formato no soportado", "danger");
+            }
+        }
+
+        // Settings Modal Toggle
+        function openSettings() {
+            document.getElementById('settingsModal').style.display = 'flex';
+        }
+        function closeSettings() {
+            document.getElementById('settingsModal').style.display = 'none';
+        }
     </script>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="card-header">
+                <h2>Conexión a la Nube (Supabase)</h2>
+                <button class="btn btn-secondary btn-icon" onclick="closeSettings()"><i data-lucide="x"></i></button>
+            </div>
+            <div class="card-body">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+                    Para sincronizar en tiempo real con otros dispositivos, crea un proyecto en <b>supabase.com</b> y pega tus credenciales aquí.
+                </p>
+                <div class="form-group">
+                    <label>Supabase URL</label>
+                    <input type="text" id="supabaseUrl" class="form-control" placeholder="https://xyz.supabase.co">
+                </div>
+                <div class="form-group">
+                    <label>Supabase Anon Key</label>
+                    <input type="password" id="supabaseKey" class="form-control" placeholder="eyJhbGciOiJIUzI1NiI...">
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                    <button class="btn btn-primary" style="flex: 1;" onclick="saveCloudSettings()">
+                        <i data-lucide="cloud-lightning"></i> Conectar Ahora
+                    </button>
+                    <button class="btn btn-danger" style="flex: 1;" onclick="disconnectCloud()">
+                        <i data-lucide="cloud-off"></i> Desconectar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
