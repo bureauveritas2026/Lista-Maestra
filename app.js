@@ -18,93 +18,74 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const fsdb = firebase.firestore();
-const auth = firebase.auth();
 const COLLECTION = "documentos";
 
 /* ============================================================
-   GOOGLE AUTH — para subir archivos a Drive
+   GOOGLE APPS SCRIPT — para subir archivos a Drive sin login
    ============================================================ */
-let driveAccessToken = null;
-let driveUser        = null;
+// IMPORTANTE: Aquí debes pegar la URL Web App generada por Google Apps Script
+const APPS_SCRIPT_URL = "PEGAR_AQUI_LA_URL_DEL_SCRIPT";
 
-const googleProvider = new firebase.auth.GoogleAuthProvider();
-googleProvider.addScope("https://www.googleapis.com/auth/drive.file");
+function fileToBase64String(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]); // remove data:mime/type;base64,
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
-auth.onAuthStateChanged(user => {
-  driveUser = user;
-  updateDriveAuthUI(user);
-});
-
-function updateDriveAuthUI(user) {
-  const chip      = document.getElementById("driveAuthChip");
-  const emailEl   = document.getElementById("driveAuthEmail");
-  const signInBtn = document.getElementById("driveSignInBtn");
-  const signOutBtn= document.getElementById("driveSignOutBtn");
-  if (!chip) return;
-  if (user) {
-    chip.style.display     = "flex";
-    emailEl.textContent    = user.displayName || user.email;
-    signInBtn.style.display  = "none";
-    signOutBtn.style.display = "";
-  } else {
-    chip.style.display       = "none";
-    signInBtn.style.display  = "";
-    signOutBtn.style.display = "none";
-    driveAccessToken = null;
+async function uploadToAppsScript(file, onProgress) {
+  if (APPS_SCRIPT_URL === "PEGAR_AQUI_LA_URL_DEL_SCRIPT") {
+    throw new Error("Falta configurar la URL del Google Apps Script en el código.");
   }
-}
+  
+  if (onProgress) onProgress(10); // Fake initial progress
 
-async function driveSignIn() {
-  try {
-    const result     = await auth.signInWithPopup(googleProvider);
-    driveAccessToken = result.credential.accessToken;
-    toast("Conectado con Google Drive ✓", "success");
-  } catch (err) {
-    toast("Error al conectar: " + err.message, "error");
-  }
-}
+  const base64Data = await fileToBase64String(file);
+  
+  if (onProgress) onProgress(40); // Fake processing progress
 
-async function driveSignOut() {
-  await auth.signOut();
-  driveAccessToken = null;
-  toast("Desconectado de Google Drive", "info");
-}
+  const payload = JSON.stringify({
+    base64: base64Data,
+    filename: file.name,
+    mimeType: file.type || "application/octet-stream"
+  });
 
-async function getAccessToken() {
-  if (driveAccessToken) return driveAccessToken;
-  const result = await auth.signInWithPopup(googleProvider);
-  driveAccessToken = result.credential.accessToken;
-  return driveAccessToken;
-}
-
-async function uploadToDrive(file, onProgress) {
-  const token = await getAccessToken();
-
-  // Step 1 — initiate resumable upload
-  const metadata = { name: file.name, parents: [DRIVE_FOLDER_ID] };
-  const initRes  = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink,mimeType",
-    {
-      method:  "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": file.size },
-      body:    JSON.stringify(metadata),
-    }
-  );
-  if (!initRes.ok) throw new Error(`Drive init error: ${initRes.status}`);
-  const uploadUrl = initRes.headers.get("Location");
-
-  // Step 2 — upload with XMLHttpRequest for progress tracking
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", uploadUrl);
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-    xhr.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)); };
-    xhr.onload = () => {
-      if (xhr.status === 200 || xhr.status === 201) resolve(JSON.parse(xhr.responseText));
-      else reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+    xhr.open("POST", APPS_SCRIPT_URL);
+    // Use text/plain to avoid CORS preflight OPTIONS request from the browser
+    xhr.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
+    
+    xhr.upload.onprogress = e => { 
+      // XHR upload progress works for sending the payload to the Apps Script server
+      if (e.lengthComputable && onProgress) {
+        // Map upload payload progress to 40% -> 90%
+        const pct = 40 + Math.round((e.loaded / e.total) * 50);
+        onProgress(pct); 
+      }
     };
-    xhr.onerror = () => reject(new Error("Network error during upload"));
-    xhr.send(file);
+    
+    xhr.onload = () => {
+      try {
+        if (onProgress) onProgress(100);
+        const res = JSON.parse(xhr.responseText);
+        if (res.status === 'success') {
+          resolve({
+            id: res.id,
+            name: res.name,
+            webViewLink: res.url
+          });
+        } else {
+          reject(new Error(res.message || "Error en Apps Script"));
+        }
+      } catch (err) {
+        reject(new Error("Error parseando respuesta de Apps Script"));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Error de red al subir a Apps Script. Verifica que el script esté configurado como 'Cualquier persona'."));
+    xhr.send(payload);
   });
 }
 
@@ -646,7 +627,7 @@ document.getElementById("repoForm").onsubmit = async e => {
       const progressPct = document.getElementById("repoProgressPct");
       progress.style.display = "block";
 
-      const driveFile = await uploadToDrive(file, pct => {
+      const driveFile = await uploadToAppsScript(file, pct => {
         progressBar.style.width = pct + "%";
         progressPct.textContent  = pct + "%";
       });
@@ -655,6 +636,7 @@ document.getElementById("repoForm").onsubmit = async e => {
       driveLink   = driveFile.webViewLink || DRIVE_FOLDER_URL;
       driveFileId = driveFile.id;
       nombre      = nombre || driveFile.name;
+
 
       // Auto-detect tipo from mime
       const mimeToTipo = {
