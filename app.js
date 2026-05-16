@@ -16,37 +16,77 @@ const GUN_KEY = 'bureauveritas2026-lista-maestra-v1';
 const gun = Gun({
     peers: [
         'https://gun-manhattan.herokuapp.com/gun',
-        'https://gun-ams1.herokuapp.com/gun'
+        'https://gun-ams1.herokuapp.com/gun',
+        'https://gun-us-east1.herokuapp.com/gun',
+        'https://gundb.herokuapp.com/gun'
     ]
 });
-const gunDocs = gun.get(GUN_KEY).get('documentos');
+const gunDocs = gun.get(GUN_KEY).get('docs_v2');
 
 function initSync() {
-    document.getElementById('syncStatus').innerHTML = '<span class="dot"></span> Online (Sincronizado)';
-    document.getElementById('syncStatus').style.color = 'var(--secondary)';
+    const statusEl = document.getElementById('syncStatus');
+    statusEl.innerHTML = '<span class="dot" style="background: var(--accent);"></span> Conectando a la red...';
+    
+    // Connection Monitor
+    gun.on('hi', peer => {
+        statusEl.innerHTML = '<span class="dot" style="background: var(--secondary);"></span> Online (Sincronizado)';
+        statusEl.style.color = 'var(--secondary)';
+        showToast("Conectado a la red de sincronización", "success");
+    });
+
+    gun.on('bye', peer => {
+        statusEl.innerHTML = '<span class="dot" style="background: var(--danger);"></span> Offline (Local)';
+        statusEl.style.color = 'var(--danger)';
+    });
     
     // Listen for changes from other peers
-    gunDocs.map().on(async (data, id) => {
+    gunDocs.map().on(async (data, gunId) => {
         if (!data) return;
         
-        // Update local Dexie if data is newer or missing
-        const local = await db.documentos.get(parseInt(id) || id);
-        if (!local || local.fecha_actualizacion < data.fecha_actualizacion) {
-            // Convert Base64 back to Blob if needed
-            let fileBlob = data.fileBlob;
-            if (typeof fileBlob === 'string' && fileBlob.startsWith('data:')) {
-                const res = await fetch(fileBlob);
-                fileBlob = await res.blob();
-            }
+        try {
+            const localId = data.id;
+            const local = await db.documentos.get(localId);
             
-            await db.documentos.put({
-                ...data,
-                id: isNaN(id) ? id : parseInt(id),
-                fileBlob: fileBlob
-            });
-            loadData();
+            // Sync only if remote data is newer or local is missing
+            if (!local || (data.fecha_actualizacion > (local.fecha_actualizacion || 0))) {
+                let fileBlob = data.fileBlob;
+                
+                // Convert Base64 back to Blob for local storage if it's a string
+                if (typeof fileBlob === 'string' && fileBlob.startsWith('data:')) {
+                    const res = await fetch(fileBlob);
+                    fileBlob = await res.blob();
+                }
+                
+                await db.documentos.put({
+                    ...data,
+                    id: localId,
+                    fileBlob: fileBlob
+                });
+                loadData();
+            }
+        } catch (e) {
+            console.error("Sync error:", e);
         }
     });
+
+    // Periodically push all local data to Gun to ensure network persistence
+    setInterval(async () => {
+        const localData = await db.documentos.toArray();
+        localData.forEach(doc => {
+            const syncDoc = { ...doc };
+            // If it's a Blob, convert to Base64 for the network push
+            if (doc.fileBlob instanceof Blob) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    syncDoc.fileBlob = reader.result;
+                    gunDocs.get(doc.id.toString()).put(syncDoc);
+                };
+                reader.readAsDataURL(doc.fileBlob);
+            } else {
+                gunDocs.get(doc.id.toString()).put(syncDoc);
+            }
+        });
+    }, 30000); // Every 30 seconds
 }
 
 // App State
@@ -184,13 +224,13 @@ docForm.onsubmit = async (e) => {
 
     try {
         let id = editModeId || Date.now();
-        let gunPayload = { ...docData, fileName, id: id.toString() };
+        let gunPayload = { ...docData, fileName, id: id };
 
         // Handle File (Convert to Base64 for Gun sync if small enough)
         if (fileBlob) {
-            if (fileBlob.size > 2 * 1024 * 1024) { // 2MB Limit for sync
-                showToast("Archivo muy grande para sincronización inmediata (>2MB). Se guardará localmente.", "warning");
-                // Store locally only
+            if (fileBlob.size > 2 * 1024 * 1024) { // 2MB Limit for network sync
+                showToast("Archivo muy grande (>2MB). Solo se verá en esta PC.", "warning");
+                // gunPayload will have no fileBlob for the network
             } else {
                 const reader = new FileReader();
                 const base64 = await new Promise(resolve => {
@@ -201,16 +241,26 @@ docForm.onsubmit = async (e) => {
             }
         } else if (editModeId) {
             const oldDoc = await db.documentos.get(editModeId);
-            gunPayload.fileBlob = oldDoc.fileBlob;
+            gunPayload.fileBlob = oldDoc.fileBlob; // Could be Base64 or Blob
             gunPayload.fileName = oldDoc.fileName;
         }
 
-        // Save to Gun (Online)
-        gunDocs.get(id.toString()).put(gunPayload);
-
-        // Save to Dexie (Local)
+        // Save to Local (Dexie) - Always save the real Blob if available
         const localPayload = { ...docData, id, fileName, fileBlob: fileBlob || gunPayload.fileBlob };
         await db.documentos.put(localPayload);
+
+        // Save to Gun (Online) - Must be Base64 or string for the network
+        if (gunPayload.fileBlob instanceof Blob) {
+            // Convert Blob to Base64 before sending to Gun
+            const reader = new FileReader();
+            reader.onload = () => {
+                gunPayload.fileBlob = reader.result;
+                gunDocs.get(id.toString()).put(gunPayload);
+            };
+            reader.readAsDataURL(gunPayload.fileBlob);
+        } else {
+            gunDocs.get(id.toString()).put(gunPayload);
+        }
 
         showToast(editModeId ? "Documento actualizado" : "Documento guardado");
         resetForm();
