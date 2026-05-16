@@ -12,81 +12,85 @@ db.version(2).stores({
 
 // Initialize Gun.js (Zero-Setup Online DB)
 // Using a unique key based on the repository to avoid collisions
-const GUN_KEY = 'bureauveritas2026-lista-maestra-v1';
+const GUN_KEY = 'bureauveritas2026-lista-maestra-production-v2';
 const gun = Gun({
     peers: [
         'https://gun-manhattan.herokuapp.com/gun',
         'https://gun-ams1.herokuapp.com/gun',
         'https://gun-us-east1.herokuapp.com/gun',
         'https://gundb.herokuapp.com/gun'
-    ]
+    ],
+    localStorage: false // We use Dexie for local storage
 });
-const gunDocs = gun.get(GUN_KEY).get('docs_v2');
+const gunDocs = gun.get(GUN_KEY).get('documentos');
 
 function initSync() {
-    const statusEl = document.getElementById('syncStatus');
-    statusEl.innerHTML = '<span class="dot" style="background: var(--accent);"></span> Conectando a la red...';
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    
+    statusDot.style.background = 'var(--accent)';
+    statusText.textContent = 'Conectando a la red...';
     
     // Connection Monitor
-    gun.on('hi', peer => {
-        statusEl.innerHTML = '<span class="dot" style="background: var(--secondary);"></span> Online (Sincronizado)';
-        statusEl.style.color = 'var(--secondary)';
-        showToast("Conectado a la red de sincronización", "success");
-    });
-
-    gun.on('bye', peer => {
-        statusEl.innerHTML = '<span class="dot" style="background: var(--danger);"></span> Offline (Local)';
-        statusEl.style.color = 'var(--danger)';
-    });
+    let peerCount = 0;
     
+    setInterval(() => {
+        // Check peers
+        const peers = gun.back('opt.peers');
+        peerCount = Object.keys(peers).filter(k => peers[k].wire && peers[k].wire.readyState === 1).length;
+        
+        if (peerCount > 0) {
+            statusDot.style.background = 'var(--secondary)';
+            statusText.textContent = `Online (${peerCount} pares)`;
+        } else {
+            statusDot.style.background = 'var(--danger)';
+            statusText.textContent = 'Offline (Buscando pares...)';
+        }
+    }, 5000);
+
     // Listen for changes from other peers
     gunDocs.map().on(async (data, gunId) => {
-        if (!data) return;
+        if (!data || !data.id) return;
         
         try {
-            const localId = data.id;
-            const local = await db.documentos.get(localId);
-            
-            // Sync only if remote data is newer or local is missing
+            const local = await db.documentos.get(data.id);
             if (!local || (data.fecha_actualizacion > (local.fecha_actualizacion || 0))) {
                 let fileBlob = data.fileBlob;
-                
-                // Convert Base64 back to Blob for local storage if it's a string
                 if (typeof fileBlob === 'string' && fileBlob.startsWith('data:')) {
                     const res = await fetch(fileBlob);
                     fileBlob = await res.blob();
                 }
                 
-                await db.documentos.put({
-                    ...data,
-                    id: localId,
-                    fileBlob: fileBlob
-                });
+                await db.documentos.put({ ...data, fileBlob });
                 loadData();
+                showToast("Datos actualizados desde la red", "info");
             }
-        } catch (e) {
-            console.error("Sync error:", e);
-        }
+        } catch (e) { console.error("Sync error:", e); }
     });
+}
 
-    // Periodically push all local data to Gun to ensure network persistence
-    setInterval(async () => {
-        const localData = await db.documentos.toArray();
-        localData.forEach(doc => {
-            const syncDoc = { ...doc };
-            // If it's a Blob, convert to Base64 for the network push
-            if (doc.fileBlob instanceof Blob) {
+async function forceSync() {
+    const icon = document.getElementById('syncIcon');
+    if (icon) icon.style.animation = 'spin 1s infinite linear';
+    
+    const localData = await db.documentos.toArray();
+    for (const doc of localData) {
+        const syncDoc = { ...doc };
+        if (doc.fileBlob instanceof Blob) {
+            const base64 = await new Promise(resolve => {
                 const reader = new FileReader();
-                reader.onload = () => {
-                    syncDoc.fileBlob = reader.result;
-                    gunDocs.get(doc.id.toString()).put(syncDoc);
-                };
+                reader.onload = () => resolve(reader.result);
                 reader.readAsDataURL(doc.fileBlob);
-            } else {
-                gunDocs.get(doc.id.toString()).put(syncDoc);
-            }
-        });
-    }, 30000); // Every 30 seconds
+            });
+            syncDoc.fileBlob = base64;
+        }
+        gunDocs.get(doc.id.toString()).put(syncDoc);
+    }
+    
+    setTimeout(() => {
+        if (icon) icon.style.animation = 'none';
+        showToast("Sincronización forzada completada", "success");
+    }, 2000);
 }
 
 // App State

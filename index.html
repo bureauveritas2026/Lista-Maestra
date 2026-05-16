@@ -19,6 +19,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/lib/webrtc.js"></script>
 </head>
 <body>
     <div class="container">
@@ -35,9 +36,12 @@
             </div>
             <div style="display: flex; gap: 1rem; align-items: center;">
                 <div class="live-indicator" id="syncStatus">
-                    <span class="dot"></span>
-                    Conectando...
+                    <span class="dot" id="statusDot" style="background: var(--accent);"></span>
+                    <span id="statusText">Conectando...</span>
                 </div>
+                <button class="btn btn-secondary btn-icon" onclick="forceSync()" title="Forzar Sincronización">
+                    <i data-lucide="refresh-cw" id="syncIcon"></i>
+                </button>
                 <button class="btn btn-secondary btn-icon" id="themeToggle" onclick="toggleTheme()" title="Cambiar Tema">
                     <i data-lucide="moon"></i>
                 </button>
