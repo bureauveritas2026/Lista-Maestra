@@ -52,41 +52,32 @@ async function uploadToAppsScript(file, onProgress) {
     mimeType: file.type || "application/octet-stream"
   });
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", APPS_SCRIPT_URL);
-    // Use text/plain to avoid CORS preflight OPTIONS request from the browser
-    xhr.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
+  try {
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      body: payload
+      // No setear headers explícitos evita el error de CORS (OPTIONS preflight)
+    });
     
-    xhr.upload.onprogress = e => { 
-      // XHR upload progress works for sending the payload to the Apps Script server
-      if (e.lengthComputable && onProgress) {
-        // Map upload payload progress to 40% -> 90%
-        const pct = 40 + Math.round((e.loaded / e.total) * 50);
-        onProgress(pct); 
-      }
-    };
+    if (!response.ok) throw new Error("Error HTTP: " + response.status);
     
-    xhr.onload = () => {
-      try {
-        if (onProgress) onProgress(100);
-        const res = JSON.parse(xhr.responseText);
-        if (res.status === 'success') {
-          resolve({
-            id: res.id,
-            name: res.name,
-            webViewLink: res.url
-          });
-        } else {
-          reject(new Error(res.message || "Error en Apps Script"));
-        }
-      } catch (err) {
-        reject(new Error("Error parseando respuesta de Apps Script"));
-      }
-    };
-    xhr.onerror = () => reject(new Error("Error de red al subir a Apps Script. Verifica que el script esté configurado como 'Cualquier persona'."));
-    xhr.send(payload);
-  });
+    if (onProgress) onProgress(90);
+    const res = await response.json();
+    
+    if (res.status === 'success') {
+      if (onProgress) onProgress(100);
+      return {
+        id: res.id,
+        name: res.name,
+        webViewLink: res.url
+      };
+    } else {
+      throw new Error(res.message || "Error interno del script");
+    }
+  } catch (err) {
+    console.error("Fetch error:", err);
+    throw new Error("Error de red al subir a Apps Script. " + err.message);
+  }
 }
 
 /* ============================================================
