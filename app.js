@@ -914,7 +914,7 @@ function bindUI() {
   const repoFileLabel = document.getElementById("repoFileLabel");
 
   if (repoDrop) {
-    repoDrop.onclick = () => repoFileInput.click();
+
     repoDrop.addEventListener("dragover",  e => { e.preventDefault(); repoDrop.style.borderColor = "var(--c-primary)"; });
     repoDrop.addEventListener("dragleave", () => { repoDrop.style.borderColor = ""; });
     repoDrop.addEventListener("drop", e => {
