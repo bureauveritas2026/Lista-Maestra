@@ -1,48 +1,18 @@
 /* 
-    Lista Maestra - Core Logic 
-    Powered by Dexie.js & Supabase (Online Professional)
+    Lista Maestra - Core Logic v2.1
+    Modern, Robust & Cloud-Ready
 */
 
-// Initialize Local Database
+// Initialize Local Database (Dexie)
 const db = new Dexie("ListaMaestraDB");
 db.version(2).stores({
     documentos: '++id, area, titulo, version, codigo, tipo, fecha, fileBlob, fileName',
     settings: 'key, value'
 });
 
-// Cloud State
+// Global State
 let supabaseClient = null;
 let isCloud = false;
-
-async function initCloud() {
-    const url = localStorage.getItem('supabaseUrl');
-    const key = localStorage.getItem('supabaseKey');
-
-    if (url && key) {
-        try {
-            supabaseClient = supabase.createClient(url, key);
-            isCloud = true;
-            document.getElementById('statusDot').style.background = 'var(--secondary)';
-            document.getElementById('statusText').textContent = 'Sincronizado (Nube)';
-            
-            // Subscribe to real-time changes
-            supabaseClient
-                .channel('schema-db-changes')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'documentos' }, () => {
-                    loadData();
-                })
-                .subscribe();
-                
-            return true;
-        } catch (err) {
-            console.error("Cloud connection error:", err);
-            isCloud = false;
-        }
-    }
-    return false;
-}
-
-// App State
 let currentDocs = [];
 let editModeId = null;
 
@@ -54,63 +24,117 @@ const areaFilter = document.getElementById('areaFilter');
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 
-// Theme Management
-async function initTheme() {
-    const savedTheme = await db.settings.get('theme');
-    if (savedTheme?.value === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        document.getElementById('themeToggle').innerHTML = '<i data-lucide="sun"></i>';
+// --- Initialization ---
+window.onload = async () => {
+    await initTheme();
+    await initCloud();
+    
+    // Seed sample data if totally empty
+    const count = await db.documentos.count();
+    if (count === 0 && !isCloud) {
+        await db.documentos.bulkAdd([
+            { area: 'GG', titulo: 'Plan Estratégico 2026', version: '01', codigo: 'PE-GG-FO-001', tipo: 'PROCEDIMIENTO', fecha: '2026-01-01' },
+            { area: 'GI', titulo: 'Manual de Gestión de Calidad', version: '02', codigo: 'PE-GI-FO-001', tipo: 'MANUAL', fecha: '2026-02-15' },
+            { area: 'FO', titulo: 'Checklist Recepción', version: '00', codigo: 'PM-FO-FO-001', tipo: 'FORMATO', fecha: '2026-05-10' }
+        ]);
+    }
+
+    loadData();
+    
+    // Event Listeners
+    searchInput.oninput = loadData;
+    areaFilter.onchange = loadData;
+    dropzone.onclick = () => fileInput.click();
+    fileInput.onchange = () => {
+        if (fileInput.files.length > 0) {
+            document.getElementById('fileStatus').innerHTML = `<b>Adjunto:</b> ${fileInput.files[0].name}`;
+        }
+    };
+    
+    // Auto-generate Code
+    document.getElementById('area').addEventListener('change', generateCode);
+    
+    lucide.createIcons();
+};
+
+// --- Cloud Logic ---
+async function initCloud() {
+    const url = localStorage.getItem('supabaseUrl');
+    const key = localStorage.getItem('supabaseKey');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    if (url && key) {
+        try {
+            supabaseClient = supabase.createClient(url, key);
+            isCloud = true;
+            statusDot.style.background = 'var(--secondary)';
+            statusText.textContent = 'Cloud Online';
+            
+            // Real-time subscription
+            supabaseClient.channel('db-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'documentos' }, loadData).subscribe();
+            
+            document.getElementById('supabaseUrl').value = url;
+            document.getElementById('supabaseKey').value = key;
+        } catch (err) {
+            console.error("Cloud Error:", err);
+            statusText.textContent = 'Error Cloud';
+        }
+    } else {
+        statusDot.style.background = 'var(--danger)';
+        statusText.textContent = 'Modo Local';
     }
 }
 
-async function toggleTheme() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const newTheme = isDark ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    await db.settings.put({ key: 'theme', value: newTheme });
-    document.getElementById('themeToggle').innerHTML = `<i data-lucide="${isDark ? 'moon' : 'sun'}"></i>`;
-    lucide.createIcons();
+async function saveCloudSettings() {
+    const url = document.getElementById('supabaseUrl').value.trim();
+    const key = document.getElementById('supabaseKey').value.trim();
+
+    if (!url || !key) {
+        showToast("Ingresa URL y Key", "danger");
+        return;
+    }
+
+    showToast("Conectando con la nube...", "info");
+    const success = await initCloud();
+    if (success) {
+        const localData = await db.documentos.toArray();
+        if (localData.length > 0 && confirm("¿Deseas subir tus datos locales a la nube para que otros dispositivos puedan verlos?")) {
+            for (const doc of localData) {
+                const { id, ...payload } = doc;
+                await supabaseClient.from('documentos').insert([payload]);
+            }
+        }
+        showToast("¡Conectado exitosamente!", "success");
+        setTimeout(() => location.reload(), 1500);
+    }
 }
 
-// Data Loading
-async function loadData() {
-    const searchTerm = searchInput.value.toLowerCase();
-    const area = areaFilter.value;
+function disconnectCloud() {
+    localStorage.removeItem('supabaseUrl');
+    localStorage.removeItem('supabaseKey');
+    showToast("Desconectado de la nube", "info");
+    setTimeout(() => location.reload(), 1000);
+}
 
+// --- Data Operations ---
+async function loadData() {
     let docs = [];
 
     if (isCloud) {
-        try {
-            const { data, error } = await supabaseClient.from('documentos').select('*');
-            if (!error && data) {
-                docs = data;
-                // Background sync to local for offline access (caching)
-                for (let d of data) {
-                    const localDoc = { ...d };
-                    // If we already have a real Blob locally, don't overwrite it with the URL string yet
-                    // (Real sync would be more complex, but this keeps the UI responsive)
-                    const existing = await db.documentos.get(d.id);
-                    if (!existing) await db.documentos.put(localDoc);
-                }
-            } else {
-                docs = await db.documentos.toArray();
-            }
-        } catch (e) {
-            docs = await db.documentos.toArray();
-        }
+        const { data, error } = await supabaseClient.from('documentos').select('*');
+        if (!error) docs = data;
+        else docs = await db.documentos.toArray();
     } else {
-        let collection = db.documentos.toCollection();
-        if (area) collection = db.documentos.where('area').equals(area);
-        docs = await collection.toArray();
+        docs = await db.documentos.toArray();
     }
 
-    if (area && isCloud) docs = docs.filter(d => d.area === area);
+    const searchTerm = searchInput.value.toLowerCase();
+    const area = areaFilter.value;
 
+    if (area) docs = docs.filter(d => d.area === area);
     if (searchTerm) {
-        docs = docs.filter(d => 
-            d.titulo.toLowerCase().includes(searchTerm) || 
-            d.codigo.toLowerCase().includes(searchTerm)
-        );
+        docs = docs.filter(d => d.titulo.toLowerCase().includes(searchTerm) || d.codigo.toLowerCase().includes(searchTerm));
     }
 
     currentDocs = docs.sort((a, b) => b.id - a.id);
@@ -118,63 +142,6 @@ async function loadData() {
     updateStats();
 }
 
-// UI Rendering
-function renderTable() {
-    if (currentDocs.length === 0) {
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="8" style="text-align: center; padding: 3rem; color: var(--text-muted);">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">📂</div>
-                    <p>No se encontraron documentos</p>
-                </td>
-            </tr>
-        `;
-        return;
-    }
-
-    tableBody.innerHTML = currentDocs.map((doc, idx) => `
-        <tr class="fade-in">
-            <td>${idx + 1}</td>
-            <td><span class="badge badge-primary">${doc.area}</span></td>
-            <td>
-                <div style="font-weight: 600;">${doc.titulo}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted);">${doc.tipo}</div>
-            </td>
-            <td><span class="badge badge-warning">v${doc.version}</span></td>
-            <td><code>${doc.codigo}</code></td>
-            <td>${new Date(doc.fecha).toLocaleDateString()}</td>
-            <td>
-                ${doc.fileBlob ? `
-                    <button class="btn btn-secondary btn-icon" onclick="downloadFile(${doc.id})" title="Descargar Documento">
-                        <i data-lucide="download" style="width: 16px;"></i>
-                    </button>
-                ` : '<span style="color: var(--text-muted); font-size: 0.8rem;">Sin doc</span>'}
-            </td>
-            <td>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-icon" onclick="editDoc(${doc.id})" title="Editar">
-                        <i data-lucide="edit-2" style="width: 16px;"></i>
-                    </button>
-                    <button class="btn btn-secondary btn-icon" onclick="deleteDoc(${doc.id})" title="Eliminar" style="color: var(--danger);">
-                        <i data-lucide="trash-2" style="width: 16px;"></i>
-                    </button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
-    lucide.createIcons();
-}
-
-function updateStats() {
-    document.getElementById('statTotal').textContent = currentDocs.length;
-    const uniqueAreas = new Set(currentDocs.map(d => d.area)).size;
-    document.getElementById('statAreas').textContent = uniqueAreas;
-    
-    const docsWithFiles = currentDocs.filter(d => d.fileBlob).length;
-    document.getElementById('statFiles').textContent = docsWithFiles;
-}
-
-// Form Handling
 docForm.onsubmit = async (e) => {
     e.preventDefault();
     
@@ -194,57 +161,105 @@ docForm.onsubmit = async (e) => {
         codigo: document.getElementById('codigo').value,
         tipo: document.getElementById('tipo').value,
         fecha: document.getElementById('fecha').value,
+        fileName: fileName
     };
 
     try {
         if (isCloud) {
-            let fileUrl = null;
+            let fileRef = null;
             if (fileBlob) {
-                const filePath = `${Date.now()}_${fileName}`;
-                const { error } = await supabaseClient.storage.from('documentos').upload(filePath, fileBlob);
+                const path = `${Date.now()}_${fileName}`;
+                const { error } = await supabaseClient.storage.from('documentos').upload(path, fileBlob);
                 if (error) throw error;
-                fileUrl = filePath;
+                fileRef = path;
             }
 
-            const payload = { ...docData, fileName, fileBlob: fileUrl };
+            const payload = { ...docData, fileBlob: fileRef };
             if (editModeId) {
-                const { error } = await supabaseClient.from('documentos').update(payload).eq('id', editModeId);
-                if (error) throw error;
-                showToast("Actualizado en la nube");
+                await supabaseClient.from('documentos').update(payload).eq('id', editModeId);
             } else {
-                const { error } = await supabaseClient.from('documentos').insert([payload]);
-                if (error) throw error;
-                showToast("Guardado en la nube");
+                await supabaseClient.from('documentos').insert([payload]);
             }
         } else {
-            const localPayload = { ...docData, fileName, fileBlob };
-            if (editModeId) {
-                await db.documentos.update(editModeId, localPayload);
-                showToast("Actualizado localmente");
-            } else {
-                await db.documentos.add(localPayload);
-                showToast("Guardado localmente");
-            }
+            const payload = { ...docData, fileBlob };
+            if (editModeId) await db.documentos.update(editModeId, payload);
+            else await db.documentos.add(payload);
         }
-        
+
+        showToast(editModeId ? "Actualizado correctamente" : "Guardado correctamente");
         resetForm();
         loadData();
     } catch (err) {
-        console.error(err);
         showToast("Error: " + err.message, "danger");
     }
 };
 
-function resetForm() {
-    docForm.reset();
-    editModeId = null;
-    document.getElementById('formTitle').textContent = "Nuevo Documento";
-    document.getElementById('submitBtn').innerHTML = '<i data-lucide="plus"></i> Agregar Documento';
-    document.getElementById('fileStatus').textContent = "Ningún archivo seleccionado";
+async function deleteDoc(id) {
+    if (confirm("¿Seguro de eliminar este documento?")) {
+        if (isCloud) await supabaseClient.from('documentos').delete().eq('id', id);
+        await db.documentos.delete(id);
+        showToast("Eliminado");
+        loadData();
+    }
+}
+
+async function downloadFile(id) {
+    const doc = currentDocs.find(d => d.id === id);
+    if (!doc || !doc.fileBlob) return;
+
+    let url;
+    if (isCloud && typeof doc.fileBlob === 'string') {
+        const { data, error } = await supabaseClient.storage.from('documentos').download(doc.fileBlob);
+        if (error) return showToast("Error al descargar", "danger");
+        url = URL.createObjectURL(data);
+    } else {
+        url = URL.createObjectURL(doc.fileBlob);
+    }
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = doc.fileName || 'documento';
+    a.click();
+}
+
+// --- UI Helpers ---
+function renderTable() {
+    tableBody.innerHTML = currentDocs.length ? currentDocs.map((doc, idx) => `
+        <tr class="fade-in">
+            <td>${idx + 1}</td>
+            <td><span class="badge badge-primary">${doc.area}</span></td>
+            <td style="font-weight: 500;">${doc.titulo} <br><small style="color: var(--text-muted);">${doc.tipo}</small></td>
+            <td><span class="badge badge-warning">v${doc.version}</span></td>
+            <td><code>${doc.codigo}</code></td>
+            <td>${new Date(doc.fecha).toLocaleDateString()}</td>
+            <td>
+                ${doc.fileBlob ? `<button class="btn btn-secondary btn-icon" onclick="downloadFile(${doc.id})"><i data-lucide="download" style="width:16px;"></i></button>` : '<small>No</small>'}
+            </td>
+            <td>
+                <div class="actions">
+                    <button class="btn btn-secondary btn-icon" onclick="editDoc(${doc.id})"><i data-lucide="edit-2" style="width:16px;"></i></button>
+                    <button class="btn btn-secondary btn-icon" onclick="deleteDoc(${doc.id})" style="color: var(--danger);"><i data-lucide="trash-2" style="width:16px;"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('') : '<tr><td colspan="8" style="text-align:center; padding: 2rem;">No hay registros</td></tr>';
     lucide.createIcons();
 }
 
-// Actions
+function updateStats() {
+    document.getElementById('statTotal').textContent = currentDocs.length;
+    document.getElementById('statAreas').textContent = new Set(currentDocs.map(d => d.area)).size;
+    document.getElementById('statFiles').textContent = currentDocs.filter(d => d.fileBlob).length;
+}
+
+function resetForm() {
+    docForm.reset();
+    editModeId = null;
+    document.getElementById('formTitle').textContent = "Registro de Documento";
+    document.getElementById('fileStatus').textContent = "Haz clic para adjuntar archivo";
+    lucide.createIcons();
+}
+
 async function editDoc(id) {
     const doc = isCloud ? currentDocs.find(d => d.id === id) : await db.documentos.get(id);
     if (!doc) return;
@@ -256,201 +271,54 @@ async function editDoc(id) {
     document.getElementById('codigo').value = doc.codigo;
     document.getElementById('tipo').value = doc.tipo;
     document.getElementById('fecha').value = doc.fecha;
-    
-    document.getElementById('formTitle').textContent = "Editar Documento";
-    document.getElementById('submitBtn').innerHTML = '<i data-lucide="save"></i> Guardar Cambios';
-    document.getElementById('fileStatus').textContent = doc.fileName ? `Archivo actual: ${doc.fileName}` : "Sin archivo";
-    
+    document.getElementById('formTitle').textContent = "Editando Documento";
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// --- Utils ---
+async function generateCode() {
+    const area = document.getElementById('area').value;
+    if (!area) return;
+    const map = { 'GG': 'PE', 'GI': 'PE', 'HK': 'PM', 'FO': 'PM', 'AB': 'PM', 'CO': 'PA', 'MT': 'PA', 'TH': 'PA', 'TI': 'PA' };
+    const count = await db.documentos.where('area').equals(area).count();
+    document.getElementById('codigo').value = `${map[area] || 'XX'}-${area}-FO-${String(count + 1).padStart(3, '0')}`;
+}
+
+function openSettings() { document.getElementById('settingsModal').style.display = 'flex'; }
+function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
+
+async function initTheme() {
+    const theme = await db.settings.get('theme');
+    if (theme?.value === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+}
+
+async function toggleTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const next = isDark ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    await db.settings.put({ key: 'theme', value: next });
     lucide.createIcons();
 }
 
-async function deleteDoc(id) {
-    if (confirm("¿Estás seguro de eliminar este registro?")) {
-        if (isCloud) {
-            await supabaseClient.from('documentos').delete().eq('id', id);
-        }
-        await db.documentos.delete(id);
-        showToast("Registro eliminado");
-        loadData();
-    }
+function showToast(msg, type = "success") {
+    const toast = document.createElement('div');
+    toast.style.cssText = `position: fixed; bottom: 2rem; right: 2rem; padding: 1rem 2rem; border-radius: 12px; color: white; background: ${type === 'danger' ? 'var(--danger)' : 'var(--secondary)'}; box-shadow: var(--shadow-lg); z-index: 9999; animation: slideUp 0.3s ease;`;
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
-async function downloadFile(id) {
-    const doc = currentDocs.find(d => d.id === id);
-    if (!doc) return;
-
-    if (isCloud && doc.fileBlob && typeof doc.fileBlob === 'string') {
-        const { data, error } = await supabaseClient.storage.from('documentos').download(doc.fileBlob);
-        if (error) {
-            showToast("Error al descargar de la nube", "danger");
-            return;
-        }
-        const url = URL.createObjectURL(data);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = doc.fileName;
-        a.click();
-    } else if (doc.fileBlob) {
-        const url = URL.createObjectURL(doc.fileBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = doc.fileName;
-        a.click();
-    }
-}
-
-// File Input Logic
-dropzone.onclick = () => fileInput.click();
-fileInput.onchange = () => {
-    if (fileInput.files.length > 0) {
-        document.getElementById('fileStatus').textContent = `Seleccionado: ${fileInput.files[0].name}`;
-    }
-};
-
-// Export/Import
 async function exportToExcel() {
-    const data = await db.documentos.toArray();
-    if (data.length === 0) {
-        showToast("No hay datos para exportar", "warning");
-        return;
-    }
-
-    const worksheetData = data.map((d, i) => ({
-        "#": i + 1,
-        "Área": d.area,
-        "Título": d.titulo,
-        "Versión": d.version,
-        "Código": d.codigo,
-        "Tipo": d.tipo,
-        "Fecha": d.fecha,
-        "Tiene Archivo": d.fileBlob ? "Sí" : "No"
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(worksheetData);
+    const ws = XLSX.utils.json_to_sheet(currentDocs.map(d => ({ Área: d.area, Título: d.titulo, Ver: d.version, Código: d.codigo, Tipo: d.tipo, Fecha: d.fecha })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Lista Maestra");
-    XLSX.writeFile(wb, `Lista_Maestra_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, "Lista_Maestra.xlsx");
 }
 
 async function exportToJSON() {
-    const data = await db.documentos.toArray();
-    const processedData = await Promise.all(data.map(async d => {
-        if (d.fileBlob instanceof Blob) {
-            const reader = new FileReader();
-            const base64 = await new Promise(resolve => {
-                reader.onload = () => resolve(reader.result);
-                reader.readAsDataURL(d.fileBlob);
-            });
-            return { ...d, fileBlob: base64 };
-        }
-        return d;
-    }));
-
-    const blob = new Blob([JSON.stringify(processedData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([JSON.stringify(currentDocs, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `Lista_Maestra_Backup_${Date.now()}.json`;
+    a.href = URL.createObjectURL(blob);
+    a.download = "Lista_Maestra_Backup.json";
     a.click();
 }
-
-// Cloud Management
-async function saveCloudSettings() {
-    const url = document.getElementById('supabaseUrl').value.trim();
-    const key = document.getElementById('supabaseKey').value.trim();
-
-    if (!url || !key) {
-        showToast("Por favor ingresa URL y Key", "warning");
-        return;
-    }
-
-    localStorage.setItem('supabaseUrl', url);
-    localStorage.setItem('supabaseKey', key);
-    
-    showToast("Conectando...");
-    const success = await initCloud();
-    if (success) {
-        // Migration: Upload local data to cloud
-        const localData = await db.documentos.toArray();
-        if (localData.length > 0 && confirm("¿Deseas subir tus datos locales a la nube para que otros los vean?")) {
-            for (let doc of localData) {
-                const { id, ...payload } = doc;
-                await supabaseClient.from('documentos').insert([payload]);
-            }
-        }
-        showToast("¡Conectado exitosamente!", "success");
-        setTimeout(() => location.reload(), 1000);
-    } else {
-        showToast("Error de conexión. Verifica las llaves.", "danger");
-    }
-}
-
-function disconnectCloud() {
-    localStorage.removeItem('supabaseUrl');
-    localStorage.removeItem('supabaseKey');
-    showToast("Desconectado de la nube");
-    setTimeout(() => location.reload(), 500);
-}
-
-// Toast System
-function showToast(msg, type = "success") {
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        position: fixed; top: 2rem; right: 2rem; 
-        padding: 1rem 1.5rem; border-radius: 12px; 
-        color: white; z-index: 9999; box-shadow: var(--shadow-lg);
-        animation: slideIn 0.3s ease;
-        background: ${type === 'success' ? 'var(--secondary)' : type === 'danger' ? 'var(--danger)' : 'var(--accent)'};
-    `;
-    toast.textContent = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(100%)';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
-}
-
-// Auto-generate code logic
-document.getElementById('area').addEventListener('change', async () => {
-    const area = document.getElementById('area').value;
-    if (!area) return;
-
-    const processMap = {
-        'GG': 'PE', 'GI': 'PE',
-        'HK': 'PM', 'FO': 'PM', 'AB': 'PM',
-        'CO': 'PA', 'GR': 'PA', 'MT': 'PA', 'MD': 'PA', 'TH': 'PA', 'TI': 'PA'
-    };
-
-    const processType = processMap[area] || 'XX';
-    const count = await db.documentos.where('area').equals(area).count();
-    const nextNumber = String(count + 1).padStart(3, '0');
-    
-    document.getElementById('codigo').value = `${processType}-${area}-FO-${nextNumber}`;
-});
-
-// Initialization
-window.onload = async () => {
-    await initTheme();
-    await initCloud();
-    
-    // Seed local data if empty
-    const count = await db.documentos.count();
-    if (count === 0 && !isCloud) {
-        const sampleData = [
-            { area: 'GG', titulo: 'Plan Estratégico 2026', version: '01', codigo: 'PE-GG-FO-001', tipo: 'FORMATO', fecha: '2026-01-01' },
-            { area: 'GI', titulo: 'Manual de Calidad', version: '02', codigo: 'PE-GI-FO-001', tipo: 'MANUAL', fecha: '2026-02-15' },
-            { area: 'FO', titulo: 'Checklist de Check-in', version: '00', codigo: 'PM-FO-FO-001', tipo: 'FORMATO', fecha: '2026-05-10' }
-        ];
-        await db.documentos.bulkAdd(sampleData);
-    }
-
-    loadData();
-    searchInput.oninput = loadData;
-    areaFilter.onchange = loadData;
-    lucide.createIcons();
-
-    document.getElementById('supabaseUrl').value = localStorage.getItem('supabaseUrl') || '';
-    document.getElementById('supabaseKey').value = localStorage.getItem('supabaseKey') || '';
-};

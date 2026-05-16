@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lista Maestra - Document Management</title>
+    <title>Lista Maestra | Sistema de Gestión Documental</title>
+    <!-- Styles -->
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <!-- Third Party Libraries -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    <!-- Scripts -->
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
@@ -16,239 +17,198 @@
 </head>
 <body>
     <div class="container">
-        <!-- Header Section -->
-        <header class="glass-header">
-            <div class="logo-area">
-                <div class="logo-icon">LM</div>
+        <!-- App Header -->
+        <header class="app-header">
+            <div class="app-brand">
+                <img src="lista_maestra_logo_v2_1778914989395.png" alt="Logo">
                 <div>
                     <h1>Lista Maestra</h1>
-                    <p>Gestión Documental Bureau Veritas</p>
+                    <p style="opacity: 0.8; font-size: 0.875rem;">Bureau Veritas | Gestión de Calidad</p>
                 </div>
             </div>
             <div style="display: flex; gap: 1rem; align-items: center;">
-                <div class="live-indicator" id="syncStatus">
-                    <span class="dot" id="statusDot" style="background: var(--danger);"></span>
-                    <span id="statusText">Modo Local</span>
+                <div class="live-indicator">
+                    <span class="dot" id="statusDot" style="background: rgba(255,255,255,0.3);"></span>
+                    <span id="statusText" style="color: white;">Iniciando...</span>
                 </div>
-                <button class="btn btn-secondary btn-icon" onclick="openSettings()" title="Configurar Nube">
-                    <i data-lucide="cloud"></i>
+                <button class="btn btn-secondary btn-icon" onclick="openSettings()" style="background: rgba(255,255,255,0.2); border: none; color: white;">
+                    <i data-lucide="settings"></i>
                 </button>
-                <button class="btn btn-secondary btn-icon" id="themeToggle" onclick="toggleTheme()" title="Cambiar Tema">
+                <button class="btn btn-secondary btn-icon" id="themeToggle" onclick="toggleTheme()" style="background: rgba(255,255,255,0.2); border: none; color: white;">
                     <i data-lucide="moon"></i>
                 </button>
             </div>
         </header>
 
-        <!-- Stats Dashboard -->
-        <div class="dashboard-grid">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(37, 99, 235, 0.1); color: var(--primary);">
-                    <i data-lucide="file-text"></i>
+                    <i data-lucide="files"></i>
                 </div>
-                <div class="stat-info">
+                <div>
                     <h3 id="statTotal">0</h3>
-                    <p>Documentos Totales</p>
+                    <p class="badge-primary badge" style="padding: 0; background: none;">Total Documentos</p>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(16, 185, 129, 0.1); color: var(--secondary);">
-                    <i data-lucide="layers"></i>
+                    <i data-lucide="git-branch"></i>
                 </div>
-                <div class="stat-info">
+                <div>
                     <h3 id="statAreas">0</h3>
-                    <p>Áreas Activas</p>
+                    <p class="badge-success badge" style="padding: 0; background: none;">Áreas Activas</p>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--accent);">
                     <i data-lucide="paperclip"></i>
                 </div>
-                <div class="stat-info">
+                <div>
                     <h3 id="statFiles">0</h3>
-                    <p>Con Adjuntos</p>
+                    <p class="badge-warning badge" style="padding: 0; background: none;">Archivos Adjuntos</p>
                 </div>
             </div>
         </div>
 
-        <main class="main-content">
-            <!-- Left Panel: Form -->
-            <aside class="side-panel">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 id="formTitle">Nuevo Documento</h2>
-                        <i data-lucide="file-plus" class="text-muted"></i>
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Form Section -->
+            <aside class="card glass">
+                <div class="card-header">
+                    <h2 id="formTitle">Registro de Documento</h2>
+                    <i data-lucide="plus-circle" class="text-muted"></i>
+                </div>
+                <form id="docForm" class="card-body">
+                    <div class="form-group">
+                        <label>Área o Proceso</label>
+                        <select id="area" required class="form-control">
+                            <option value="">Seleccione...</option>
+                            <optgroup label="Estratégicos">
+                                <option value="GG">Gerencia General (GG)</option>
+                                <option value="GI">Gestión Integral (GI)</option>
+                            </optgroup>
+                            <optgroup label="Misionales">
+                                <option value="HK">Housekeeping (HK)</option>
+                                <option value="FO">Front Office (FO)</option>
+                                <option value="AB">Alimentos y Bebidas (AB)</option>
+                            </optgroup>
+                            <optgroup label="Apoyo">
+                                <option value="CO">Compras (CO)</option>
+                                <option value="MT">Mantenimiento (MT)</option>
+                                <option value="TH">Talento Humano (TH)</option>
+                                <option value="TI">Sistemas (TI)</option>
+                            </optgroup>
+                        </select>
                     </div>
-                    <form id="docForm" class="card-body">
+                    <div class="form-group">
+                        <label>Título del Documento</label>
+                        <input type="text" id="titulo" required class="form-control" placeholder="Ej. Manual de Calidad">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                         <div class="form-group">
-                            <label for="area">Área / Proceso</label>
-                            <select id="area" required class="form-control">
-                                <option value="">Seleccione...</option>
-                                <optgroup label="Estratégicos">
-                                    <option value="GG">Gerencia General (GG)</option>
-                                    <option value="GI">Gestión Integral (GI)</option>
-                                </optgroup>
-                                <optgroup label="Misionales">
-                                    <option value="HK">Housekeeping (HK)</option>
-                                    <option value="FO">Front Office (FO)</option>
-                                    <option value="AB">Alimentos y Bebidas (AB)</option>
-                                </optgroup>
-                                <optgroup label="Apoyo">
-                                    <option value="CO">Compras (CO)</option>
-                                    <option value="GR">Gestión de Reservas (GR)</option>
-                                    <option value="MT">Mantenimiento (MT)</option>
-                                    <option value="MD">Mercadeo y Ventas (MD)</option>
-                                    <option value="TH">Talento Humano (TH)</option>
-                                    <option value="TI">Sistemas (TI)</option>
-                                </optgroup>
+                            <label>Versión</label>
+                            <input type="text" id="version" required class="form-control" placeholder="01">
+                        </div>
+                        <div class="form-group">
+                            <label>Tipo</label>
+                            <select id="tipo" required class="form-control">
+                                <option value="FORMATO">FORMATO</option>
+                                <option value="MANUAL">MANUAL</option>
+                                <option value="PROCEDIMIENTO">PROCEDIMIENTO</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label for="titulo">Nombre del Documento</label>
-                            <input type="text" id="titulo" required class="form-control" placeholder="Ej. Manual de Calidad">
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="version">Versión</label>
-                                <input type="text" id="version" required class="form-control" placeholder="01">
-                            </div>
-                            <div class="form-group">
-                                <label for="tipo">Tipo</label>
-                                <select id="tipo" required class="form-control">
-                                    <option value="FORMATO">FORMATO</option>
-                                    <option value="MANUAL">MANUAL</option>
-                                    <option value="PROCEDIMIENTO">PROCEDIMIENTO</option>
-                                    <option value="GUIA">GUÍA</option>
-                                    <option value="POLITICA">POLÍTICA</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="codigo">Código (Auto-generado)</label>
-                            <input type="text" id="codigo" required class="form-control" placeholder="PE-GG-FO-001">
-                        </div>
-                        <div class="form-group">
-                            <label for="fecha">Fecha de Emisión</label>
-                            <input type="date" id="fecha" required class="form-control">
-                        </div>
-                        
-                        <div class="file-upload" id="dropzone">
-                            <i data-lucide="upload-cloud"></i>
-                            <p id="fileStatus">Haz clic o arrastra un archivo</p>
-                            <input type="file" id="fileInput" hidden>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary btn-block" id="submitBtn">
-                            <i data-lucide="plus"></i> Agregar Documento
-                        </button>
-                    </form>
-                </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Código del Documento</label>
+                        <input type="text" id="codigo" required class="form-control" placeholder="PE-GG-FO-001">
+                    </div>
+                    <div class="form-group">
+                        <label>Fecha de Emisión</label>
+                        <input type="date" id="fecha" required class="form-control">
+                    </div>
+                    <div class="dropzone" id="dropzone" style="margin-bottom: 1.5rem;">
+                        <i data-lucide="cloud-upload" style="margin-bottom: 0.5rem; color: var(--primary);"></i>
+                        <p id="fileStatus" style="font-size: 0.8rem; color: var(--text-muted);">Haz clic para adjuntar archivo</p>
+                        <input type="file" id="fileInput" hidden>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="submitBtn" style="width: 100%;">
+                        <i data-lucide="save"></i> Guardar Documento
+                    </button>
+                </form>
             </aside>
 
-            <!-- Right Panel: Table & Search -->
-            <section class="content-panel">
-                <div class="card">
-                    <div class="table-header card-header">
-                        <div class="search-box">
-                            <i data-lucide="search"></i>
-                            <input type="text" id="searchInput" placeholder="Buscar por título o código...">
+            <!-- Table Section -->
+            <section class="card glass">
+                <div class="card-header">
+                    <div style="display: flex; gap: 1rem; flex: 1;">
+                        <div class="search-box" style="position: relative; flex: 1;">
+                            <input type="text" id="searchInput" class="form-control" placeholder="Buscar por título o código..." style="padding-left: 2.5rem;">
+                            <i data-lucide="search" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 18px; color: var(--text-muted);"></i>
                         </div>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <select id="areaFilter" class="form-control" style="width: auto;">
-                                <option value="">Todas las Áreas</option>
-                                <option value="GG">GG</option>
-                                <option value="GI">GI</option>
-                                <option value="HK">HK</option>
-                                <option value="FO">FO</option>
-                                <option value="AB">AB</option>
-                                <option value="CO">CO</option>
-                                <option value="MT">MT</option>
-                            </select>
-                            <button class="btn btn-secondary" onclick="exportToExcel()" title="Exportar Excel">
-                                <i data-lucide="file-spreadsheet"></i>
-                            </button>
-                            <button class="btn btn-secondary" onclick="exportToJSON()" title="Backup JSON">
-                                <i data-lucide="database"></i>
-                            </button>
-                        </div>
+                        <select id="areaFilter" class="form-control" style="width: 150px;">
+                            <option value="">Todas Áreas</option>
+                            <option value="GG">GG</option>
+                            <option value="GI">GI</option>
+                            <option value="HK">HK</option>
+                            <option value="FO">FO</option>
+                        </select>
                     </div>
-                    <div class="table-container">
-                        <table id="docTable">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Área</th>
-                                    <th>Nombre del Documento</th>
-                                    <th>Ver.</th>
-                                    <th>Código</th>
-                                    <th>Emisión</th>
-                                    <th>Doc</th>
-                                    <th>Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tableBody">
-                                <!-- Data injected here -->
-                            </tbody>
-                        </table>
+                    <div style="display: flex; gap: 0.5rem; margin-left: 1rem;">
+                        <button class="btn btn-secondary btn-icon" onclick="exportToExcel()" title="Excel"><i data-lucide="file-spreadsheet"></i></button>
+                        <button class="btn btn-secondary btn-icon" onclick="exportToJSON()" title="Backup"><i data-lucide="database"></i></button>
                     </div>
                 </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Área</th>
+                                <th>Documento</th>
+                                <th>Ver.</th>
+                                <th>Código</th>
+                                <th>Fecha</th>
+                                <th>Archivo</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <!-- Injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
             </section>
-        </main>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal-overlay">
+        <div class="modal-content glass">
+            <div class="card-header">
+                <h2>Base de Datos Online (Supabase)</h2>
+                <button class="btn btn-icon btn-secondary" onclick="closeSettings()"><i data-lucide="x"></i></button>
+            </div>
+            <div class="card-body">
+                <p style="margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-muted);">
+                    Para que la base de datos sea online y segura (como en Render), ingresa tus credenciales de Supabase. Esto permite que otros vean y editen la lista desde cualquier dispositivo.
+                </p>
+                <div class="form-group">
+                    <label>Proyecto URL</label>
+                    <input type="text" id="supabaseUrl" class="form-control" placeholder="https://xyz.supabase.co">
+                </div>
+                <div class="form-group">
+                    <label>API Key (Anon)</label>
+                    <input type="password" id="supabaseKey" class="form-control" placeholder="eyJhbGciOiJIUzI1NiI...">
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                    <button class="btn btn-primary" onclick="saveCloudSettings()" style="flex: 1;"><i data-lucide="cloud"></i> Conectar</button>
+                    <button class="btn btn-danger" onclick="disconnectCloud()" style="flex: 1;"><i data-lucide="power"></i> Desconectar</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
-    <script>
-        // Settings Modal Toggle
-        function openSettings() {
-            document.getElementById('settingsModal').style.display = 'flex';
-        }
-        function closeSettings() {
-            document.getElementById('settingsModal').style.display = 'none';
-        }
-    </script>
-
-    <!-- Settings Modal: Setup Wizard -->
-    <div id="settingsModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 700px;">
-            <div class="card-header">
-                <h2>🌐 Configuración de Base de Datos Online</h2>
-                <button class="btn btn-secondary btn-icon" onclick="closeSettings()"><i data-lucide="x"></i></button>
-            </div>
-            <div class="card-body">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-                    <div>
-                        <h4 style="margin-bottom: 1rem; color: var(--primary);">Pasos para Conectar (1 min)</h4>
-                        <ol style="padding-left: 1.2rem; font-size: 0.9rem; line-height: 1.6;">
-                            <li>Crea cuenta gratis en <b>supabase.com</b></li>
-                            <li>Crea un nuevo proyecto.</li>
-                            <li>Ve a <b>Project Settings > API</b>.</li>
-                            <li>Copia la <b>URL</b> y la <b>Anon Key</b> y pégalas aquí.</li>
-                            <li>¡Listo! Todos verán los cambios al instante.</li>
-                        </ol>
-                        <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(37, 99, 235, 0.05); border-radius: 8px; font-size: 0.8rem;">
-                            <p><b>¿Por qué esto?</b> Gun.js es bloqueado por muchas redes de hoteles/empresas. Supabase es profesional y funciona en todo el mundo.</p>
-                        </div>
-                    </div>
-                    <div>
-                        <div class="form-group">
-                            <label>Supabase URL</label>
-                            <input type="text" id="supabaseUrl" class="form-control" placeholder="https://xyz.supabase.co">
-                        </div>
-                        <div class="form-group">
-                            <label>Supabase Anon Key</label>
-                            <input type="password" id="supabaseKey" class="form-control" placeholder="eyJhbGciOiJIUzI1NiI...">
-                        </div>
-                        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-                            <button class="btn btn-primary" style="flex: 1;" onclick="saveCloudSettings()">
-                                <i data-lucide="zap"></i> Conectar
-                            </button>
-                            <button class="btn btn-danger" style="flex: 1;" onclick="disconnectCloud()">
-                                <i data-lucide="cloud-off"></i> Desconectar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </body>
 </html>
