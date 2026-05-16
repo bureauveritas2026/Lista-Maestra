@@ -1,324 +1,618 @@
-/* 
-    Lista Maestra - Core Logic v2.1
-    Modern, Robust & Cloud-Ready
-*/
+/**
+ * Lista Maestra — app.js
+ * Firebase Firestore (online, gratuito, sin configuración por el usuario)
+ * Import: Excel / JSON  |  Export: Excel / JSON  |  Files: Base64 en Firestore
+ */
 
-// Initialize Local Database (Dexie)
-const db = new Dexie("ListaMaestraDB");
-db.version(2).stores({
-    documentos: '++id, area, titulo, version, codigo, tipo, fecha, fileBlob, fileName',
-    settings: 'key, value'
-});
-
-// Global State
-let supabaseClient = null;
-let isCloud = false;
-let currentDocs = [];
-let editModeId = null;
-
-// DOM Elements
-const docForm = document.getElementById('docForm');
-const tableBody = document.getElementById('tableBody');
-const searchInput = document.getElementById('searchInput');
-const areaFilter = document.getElementById('areaFilter');
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
-
-// --- Initialization ---
-window.onload = async () => {
-    await initTheme();
-    await initCloud();
-    
-    // Seed sample data if totally empty
-    const count = await db.documentos.count();
-    if (count === 0 && !isCloud) {
-        await db.documentos.bulkAdd([
-            { area: 'GG', titulo: 'Plan Estratégico 2026', version: '01', codigo: 'PE-GG-FO-001', tipo: 'PROCEDIMIENTO', fecha: '2026-01-01' },
-            { area: 'GI', titulo: 'Manual de Gestión de Calidad', version: '02', codigo: 'PE-GI-FO-001', tipo: 'MANUAL', fecha: '2026-02-15' },
-            { area: 'FO', titulo: 'Checklist Recepción', version: '00', codigo: 'PM-FO-FO-001', tipo: 'FORMATO', fecha: '2026-05-10' }
-        ]);
-    }
-
-    loadData();
-    
-    // Event Listeners
-    searchInput.oninput = loadData;
-    areaFilter.onchange = loadData;
-    dropzone.onclick = () => fileInput.click();
-    fileInput.onchange = () => {
-        if (fileInput.files.length > 0) {
-            document.getElementById('fileStatus').innerHTML = `<b>Adjunto:</b> ${fileInput.files[0].name}`;
-        }
-    };
-    
-    // Auto-generate Code
-    document.getElementById('area').addEventListener('change', generateCode);
-    
-    lucide.createIcons();
+/* ============================================================
+   1. FIREBASE CONFIG (proyecto dedicado bureauveritas2026)
+   ============================================================ */
+const firebaseConfig = {
+  apiKey:            "AIzaSyDw-BJLLgqNGWuDwc5m-tSuAz8o-k6G1Ak",
+  authDomain:        "lista-maestra-bv-2026.firebaseapp.com",
+  projectId:         "lista-maestra-bv-2026",
+  storageBucket:     "lista-maestra-bv-2026.firebasestorage.app",
+  messagingSenderId: "1003549153501",
+  appId:             "1:1003549153501:web:99a37d89630f2911ae6334"
 };
 
-// --- Cloud Logic ---
-async function initCloud() {
-    const url = localStorage.getItem('supabaseUrl');
-    const key = localStorage.getItem('supabaseKey');
-    const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
+firebase.initializeApp(firebaseConfig);
+const fsdb = firebase.firestore();
+const COLLECTION = "documentos";
 
-    if (url && key) {
-        try {
-            supabaseClient = supabase.createClient(url, key);
-            isCloud = true;
-            statusDot.style.background = 'var(--secondary)';
-            statusText.textContent = 'Cloud Online';
-            
-            // Real-time subscription
-            supabaseClient.channel('db-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'documentos' }, loadData).subscribe();
-            
-            document.getElementById('supabaseUrl').value = url;
-            document.getElementById('supabaseKey').value = key;
-        } catch (err) {
-            console.error("Cloud Error:", err);
-            statusText.textContent = 'Error Cloud';
-        }
-    } else {
-        statusDot.style.background = 'var(--danger)';
-        statusText.textContent = 'Modo Local';
-    }
-}
-
-async function saveCloudSettings() {
-    const url = document.getElementById('supabaseUrl').value.trim();
-    const key = document.getElementById('supabaseKey').value.trim();
-
-    if (!url || !key) {
-        showToast("Ingresa URL y Key", "danger");
-        return;
-    }
-
-    showToast("Conectando con la nube...", "info");
-    const success = await initCloud();
-    if (success) {
-        const localData = await db.documentos.toArray();
-        if (localData.length > 0 && confirm("¿Deseas subir tus datos locales a la nube para que otros dispositivos puedan verlos?")) {
-            for (const doc of localData) {
-                const { id, ...payload } = doc;
-                await supabaseClient.from('documentos').insert([payload]);
-            }
-        }
-        showToast("¡Conectado exitosamente!", "success");
-        setTimeout(() => location.reload(), 1500);
-    }
-}
-
-function disconnectCloud() {
-    localStorage.removeItem('supabaseUrl');
-    localStorage.removeItem('supabaseKey');
-    showToast("Desconectado de la nube", "info");
-    setTimeout(() => location.reload(), 1000);
-}
-
-// --- Data Operations ---
-async function loadData() {
-    let docs = [];
-
-    if (isCloud) {
-        const { data, error } = await supabaseClient.from('documentos').select('*');
-        if (!error) docs = data;
-        else docs = await db.documentos.toArray();
-    } else {
-        docs = await db.documentos.toArray();
-    }
-
-    const searchTerm = searchInput.value.toLowerCase();
-    const area = areaFilter.value;
-
-    if (area) docs = docs.filter(d => d.area === area);
-    if (searchTerm) {
-        docs = docs.filter(d => d.titulo.toLowerCase().includes(searchTerm) || d.codigo.toLowerCase().includes(searchTerm));
-    }
-
-    currentDocs = docs.sort((a, b) => b.id - a.id);
-    renderTable();
-    updateStats();
-}
-
-docForm.onsubmit = async (e) => {
-    e.preventDefault();
-    
-    const file = fileInput.files[0];
-    let fileBlob = null;
-    let fileName = '';
-
-    if (file) {
-        fileBlob = file;
-        fileName = file.name;
-    }
-
-    const docData = {
-        area: document.getElementById('area').value,
-        titulo: document.getElementById('titulo').value,
-        version: document.getElementById('version').value,
-        codigo: document.getElementById('codigo').value,
-        tipo: document.getElementById('tipo').value,
-        fecha: document.getElementById('fecha').value,
-        fileName: fileName
+/* ============================================================
+   2. LOCAL FALLBACK (IndexedDB via raw API — no Dexie needed)
+   ============================================================ */
+let localDB;
+function openLocalDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open("ListaMaestraLocal", 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains("docs"))
+        db.createObjectStore("docs", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("settings"))
+        db.createObjectStore("settings", { keyPath: "key" });
     };
+    req.onsuccess  = e => { localDB = e.target.result; res(); };
+    req.onerror    = e => rej(e);
+  });
+}
 
-    try {
-        if (isCloud) {
-            let fileRef = null;
-            if (fileBlob) {
-                const path = `${Date.now()}_${fileName}`;
-                const { error } = await supabaseClient.storage.from('documentos').upload(path, fileBlob);
-                if (error) throw error;
-                fileRef = path;
-            }
+function localPut(store, obj) {
+  return new Promise((res, rej) => {
+    const tx = localDB.transaction(store, "readwrite");
+    tx.objectStore(store).put(obj);
+    tx.oncomplete = res;
+    tx.onerror    = rej;
+  });
+}
 
-            const payload = { ...docData, fileBlob: fileRef };
-            if (editModeId) {
-                await supabaseClient.from('documentos').update(payload).eq('id', editModeId);
-            } else {
-                await supabaseClient.from('documentos').insert([payload]);
-            }
-        } else {
-            const payload = { ...docData, fileBlob };
-            if (editModeId) await db.documentos.update(editModeId, payload);
-            else await db.documentos.add(payload);
+function localGetAll(store) {
+  return new Promise((res, rej) => {
+    const tx = localDB.transaction(store, "readonly");
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = e => res(e.target.result);
+    req.onerror   = rej;
+  });
+}
+
+function localDelete(store, id) {
+  return new Promise((res, rej) => {
+    const tx = localDB.transaction(store, "readwrite");
+    tx.objectStore(store).delete(id);
+    tx.oncomplete = res;
+    tx.onerror    = rej;
+  });
+}
+
+/* ============================================================
+   3. STATE
+   ============================================================ */
+let allDocs      = [];   // documents in memory
+let editId       = null; // null = new, string = editing
+let importBuffer = [];   // rows pending confirmation
+let theme        = localStorage.getItem("lm_theme") || "light";
+
+/* ============================================================
+   4. DOM REFS
+   ============================================================ */
+const $ = id => document.getElementById(id);
+
+const form        = $("docForm");
+const tableBody   = $("tableBody");
+const searchInput = $("searchInput");
+const areaFilter  = $("areaFilter");
+const tipoFilter  = $("tipoFilter");
+const dropzone    = $("dropzone");
+const fileInput   = $("fileInput");
+const fileLabel   = $("fileLabel");
+const submitBtn   = $("submitBtn");
+const formTitle   = $("formTitle");
+const statusDot   = $("statusDot");
+const statusText  = $("statusText");
+
+/* ============================================================
+   5. INIT
+   ============================================================ */
+(async () => {
+  await openLocalDB();
+  applyTheme(theme);
+  bindUI();
+  await initFirestore();
+})();
+
+/* ============================================================
+   6. FIRESTORE INIT & REALTIME LISTENER
+   ============================================================ */
+async function initFirestore() {
+  setStatus("connecting");
+
+  try {
+    fsdb.collection(COLLECTION)
+      .orderBy("createdAt", "desc")
+      .onSnapshot(
+        snap => {
+          allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          renderTable();
+          updateStats();
+          setStatus("online");
+        },
+        err => {
+          console.warn("Firestore snapshot error:", err);
+          setStatus("offline");
+          loadFromLocal();
         }
+      );
+  } catch (e) {
+    console.error("Firestore init error:", e);
+    setStatus("offline");
+    loadFromLocal();
+  }
+}
 
-        showToast(editModeId ? "Actualizado correctamente" : "Guardado correctamente");
-        resetForm();
-        loadData();
-    } catch (err) {
-        showToast("Error: " + err.message, "danger");
+async function loadFromLocal() {
+  allDocs = await localGetAll("docs");
+  renderTable();
+  updateStats();
+}
+
+function setStatus(state) {
+  const configs = {
+    connecting: { cls: "",        text: "Conectando..." },
+    online:     { cls: "online",  text: "Cloud Online" },
+    offline:    { cls: "offline", text: "Sin conexión" },
+    saving:     { cls: "",        text: "Guardando..." },
+  };
+  const cfg = configs[state] || configs.connecting;
+  statusDot.className = "dot " + cfg.cls;
+  statusText.textContent = cfg.text;
+}
+
+/* ============================================================
+   7. CRUD
+   ============================================================ */
+form.onsubmit = async e => {
+  e.preventDefault();
+  setStatus("saving");
+
+  // Gather form data
+  const data = {
+    area:    $("area").value,
+    titulo:  $("titulo").value.trim(),
+    version: $("version").value.trim(),
+    codigo:  $("codigo").value.trim(),
+    tipo:    $("tipo").value,
+    fecha:   $("fecha").value,
+    updatedAt: Date.now(),
+  };
+
+  // Handle file attachment (Base64 for cloud storage)
+  const file = fileInput.files[0];
+  if (file) {
+    if (file.size > 3 * 1024 * 1024) {
+      toast("El archivo supera 3 MB. Usa un archivo más pequeño.", "warning");
+      setStatus("online");
+      return;
     }
+    data.fileName = file.name;
+    data.fileType = file.type;
+    data.fileData = await fileToBase64(file);
+  } else if (editId) {
+    // Keep existing file if no new one selected
+    const existing = allDocs.find(d => d.id === editId);
+    if (existing?.fileData) {
+      data.fileName = existing.fileName;
+      data.fileType = existing.fileType;
+      data.fileData = existing.fileData;
+    }
+  }
+
+  try {
+    if (editId) {
+      await fsdb.collection(COLLECTION).doc(editId).update(data);
+      toast("Documento actualizado ✓", "success");
+    } else {
+      data.createdAt = Date.now();
+      await fsdb.collection(COLLECTION).add(data);
+      toast("Documento guardado ✓", "success");
+    }
+    resetForm();
+  } catch (err) {
+    console.error(err);
+    toast("Error al guardar: " + err.message, "error");
+    // Save locally as fallback
+    const localDoc = { ...data, id: editId || ("local_" + Date.now()) };
+    await localPut("docs", localDoc);
+    toast("Guardado localmente como respaldo", "info");
+  } finally {
+    setStatus("online");
+  }
 };
 
 async function deleteDoc(id) {
-    if (confirm("¿Seguro de eliminar este documento?")) {
-        if (isCloud) await supabaseClient.from('documentos').delete().eq('id', id);
-        await db.documentos.delete(id);
-        showToast("Eliminado");
-        loadData();
-    }
-}
-
-async function downloadFile(id) {
-    const doc = currentDocs.find(d => d.id === id);
-    if (!doc || !doc.fileBlob) return;
-
-    let url;
-    if (isCloud && typeof doc.fileBlob === 'string') {
-        const { data, error } = await supabaseClient.storage.from('documentos').download(doc.fileBlob);
-        if (error) return showToast("Error al descargar", "danger");
-        url = URL.createObjectURL(data);
-    } else {
-        url = URL.createObjectURL(doc.fileBlob);
-    }
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = doc.fileName || 'documento';
-    a.click();
-}
-
-// --- UI Helpers ---
-function renderTable() {
-    tableBody.innerHTML = currentDocs.length ? currentDocs.map((doc, idx) => `
-        <tr class="fade-in">
-            <td>${idx + 1}</td>
-            <td><span class="badge badge-primary">${doc.area}</span></td>
-            <td style="font-weight: 500;">${doc.titulo} <br><small style="color: var(--text-muted);">${doc.tipo}</small></td>
-            <td><span class="badge badge-warning">v${doc.version}</span></td>
-            <td><code>${doc.codigo}</code></td>
-            <td>${new Date(doc.fecha).toLocaleDateString()}</td>
-            <td>
-                ${doc.fileBlob ? `<button class="btn btn-secondary btn-icon" onclick="downloadFile(${doc.id})"><i data-lucide="download" style="width:16px;"></i></button>` : '<small>No</small>'}
-            </td>
-            <td>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-icon" onclick="editDoc(${doc.id})"><i data-lucide="edit-2" style="width:16px;"></i></button>
-                    <button class="btn btn-secondary btn-icon" onclick="deleteDoc(${doc.id})" style="color: var(--danger);"><i data-lucide="trash-2" style="width:16px;"></i></button>
-                </div>
-            </td>
-        </tr>
-    `).join('') : '<tr><td colspan="8" style="text-align:center; padding: 2rem;">No hay registros</td></tr>';
-    lucide.createIcons();
-}
-
-function updateStats() {
-    document.getElementById('statTotal').textContent = currentDocs.length;
-    document.getElementById('statAreas').textContent = new Set(currentDocs.map(d => d.area)).size;
-    document.getElementById('statFiles').textContent = currentDocs.filter(d => d.fileBlob).length;
-}
-
-function resetForm() {
-    docForm.reset();
-    editModeId = null;
-    document.getElementById('formTitle').textContent = "Registro de Documento";
-    document.getElementById('fileStatus').textContent = "Haz clic para adjuntar archivo";
-    lucide.createIcons();
+  if (!confirm("¿Eliminar este registro?")) return;
+  try {
+    await fsdb.collection(COLLECTION).doc(id).delete();
+    await localDelete("docs", id);
+    toast("Documento eliminado", "info");
+  } catch (e) {
+    toast("Error al eliminar: " + e.message, "error");
+  }
 }
 
 async function editDoc(id) {
-    const doc = isCloud ? currentDocs.find(d => d.id === id) : await db.documentos.get(id);
-    if (!doc) return;
+  const doc = allDocs.find(d => d.id === id);
+  if (!doc) return;
 
-    editModeId = id;
-    document.getElementById('area').value = doc.area;
-    document.getElementById('titulo').value = doc.titulo;
-    document.getElementById('version').value = doc.version;
-    document.getElementById('codigo').value = doc.codigo;
-    document.getElementById('tipo').value = doc.tipo;
-    document.getElementById('fecha').value = doc.fecha;
-    document.getElementById('formTitle').textContent = "Editando Documento";
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  editId = id;
+  $("area").value    = doc.area;
+  $("titulo").value  = doc.titulo;
+  $("version").value = doc.version;
+  $("codigo").value  = doc.codigo;
+  $("tipo").value    = doc.tipo;
+  $("fecha").value   = doc.fecha;
+
+  formTitle.textContent = "Editando Documento";
+  submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar Cambios`;
+  fileLabel.innerHTML = doc.fileName
+    ? `<strong>Archivo actual:</strong> ${doc.fileName} (elige otro para reemplazar)`
+    : `<strong>Clic o arrastra</strong> para adjuntar archivo`;
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// --- Utils ---
-async function generateCode() {
-    const area = document.getElementById('area').value;
-    if (!area) return;
-    const map = { 'GG': 'PE', 'GI': 'PE', 'HK': 'PM', 'FO': 'PM', 'AB': 'PM', 'CO': 'PA', 'MT': 'PA', 'TH': 'PA', 'TI': 'PA' };
-    const count = await db.documentos.where('area').equals(area).count();
-    document.getElementById('codigo').value = `${map[area] || 'XX'}-${area}-FO-${String(count + 1).padStart(3, '0')}`;
+function downloadFile(id) {
+  const doc = allDocs.find(d => d.id === id);
+  if (!doc?.fileData) return;
+
+  const a       = document.createElement("a");
+  a.href        = doc.fileData;       // already a data-URL
+  a.download    = doc.fileName || "documento";
+  a.click();
 }
 
-function openSettings() { document.getElementById('settingsModal').style.display = 'flex'; }
-function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
-
-async function initTheme() {
-    const theme = await db.settings.get('theme');
-    if (theme?.value === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+function resetForm() {
+  form.reset();
+  editId = null;
+  formTitle.textContent = "Nuevo Documento";
+  submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Agregar Documento`;
+  fileLabel.innerHTML = `<strong>Clic o arrastra</strong> para adjuntar archivo`;
 }
 
-async function toggleTheme() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const next = isDark ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    await db.settings.put({ key: 'theme', value: next });
-    lucide.createIcons();
+/* ============================================================
+   8. RENDER TABLE
+   ============================================================ */
+function getFilteredDocs() {
+  const q    = searchInput.value.toLowerCase();
+  const area = areaFilter.value;
+  const tipo = tipoFilter.value;
+
+  return allDocs.filter(d => {
+    const matchQ    = !q    || d.titulo.toLowerCase().includes(q) || d.codigo.toLowerCase().includes(q) || d.area.toLowerCase().includes(q);
+    const matchArea = !area || d.area === area;
+    const matchTipo = !tipo || d.tipo === tipo;
+    return matchQ && matchArea && matchTipo;
+  });
 }
 
-function showToast(msg, type = "success") {
-    const toast = document.createElement('div');
-    toast.style.cssText = `position: fixed; bottom: 2rem; right: 2rem; padding: 1rem 2rem; border-radius: 12px; color: white; background: ${type === 'danger' ? 'var(--danger)' : 'var(--secondary)'}; box-shadow: var(--shadow-lg); z-index: 9999; animation: slideUp 0.3s ease;`;
-    toast.textContent = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+function renderTable() {
+  const docs = getFilteredDocs();
+
+  if (docs.length === 0) {
+    tableBody.innerHTML = `
+      <tr><td colspan="9">
+        <div class="empty-state">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <h3>Sin documentos</h3>
+          <p>Agrega el primer registro usando el formulario</p>
+        </div>
+      </td></tr>`;
+    return;
+  }
+
+  const areaBadge = {
+    GG:"badge-blue", GI:"badge-blue",
+    HK:"badge-green", FO:"badge-green", AB:"badge-green",
+    CO:"badge-amber", GR:"badge-amber", MT:"badge-amber",
+    MD:"badge-violet", TH:"badge-violet", TI:"badge-violet",
+  };
+
+  const tipoBadge = {
+    FORMATO:"badge-blue", MANUAL:"badge-green",
+    PROCEDIMIENTO:"badge-amber", "GUÍA":"badge-violet",
+    "POLÍTICA":"badge-red", INSTRUCTIVO:"badge-amber",
+  };
+
+  tableBody.innerHTML = docs.map((doc, i) => `
+    <tr class="fade-in">
+      <td style="color:var(--text-muted);font-weight:600">${i + 1}</td>
+      <td><span class="badge ${areaBadge[doc.area] || 'badge-blue'}">${doc.area}</span></td>
+      <td style="max-width:260px">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${doc.titulo}">${doc.titulo}</div>
+      </td>
+      <td><span class="badge badge-amber">v${doc.version}</span></td>
+      <td><code>${doc.codigo}</code></td>
+      <td><span class="badge ${tipoBadge[doc.tipo] || 'badge-blue'}">${doc.tipo}</span></td>
+      <td style="white-space:nowrap">${formatDate(doc.fecha)}</td>
+      <td>
+        ${doc.fileData
+          ? `<span class="file-chip" onclick="downloadFile('${doc.id}')" title="Descargar ${doc.fileName}">
+               <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+               ${doc.fileName || "archivo"}
+             </span>`
+          : `<span style="color:var(--text-light);font-size:.78rem">—</span>`}
+      </td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-ghost btn-icon" onclick="editDoc('${doc.id}')" title="Editar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon" onclick="deleteDoc('${doc.id}')" title="Eliminar" style="color:var(--c-red)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
 }
 
-async function exportToExcel() {
-    const ws = XLSX.utils.json_to_sheet(currentDocs.map(d => ({ Área: d.area, Título: d.titulo, Ver: d.version, Código: d.codigo, Tipo: d.tipo, Fecha: d.fecha })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Lista Maestra");
-    XLSX.writeFile(wb, "Lista_Maestra.xlsx");
+function updateStats() {
+  $("statTotal").textContent     = allDocs.length;
+  $("statAreas").textContent     = new Set(allDocs.map(d => d.area)).size;
+  $("statFiles").textContent     = allDocs.filter(d => d.fileData).length;
+  $("statVersiones").textContent = new Set(allDocs.map(d => d.version)).size;
 }
 
-async function exportToJSON() {
-    const blob = new Blob([JSON.stringify(currentDocs, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = "Lista_Maestra_Backup.json";
-    a.click();
+/* ============================================================
+   9. IMPORT — Excel & JSON
+   ============================================================ */
+async function handleImportFile(file) {
+  const ext = file.name.split(".").pop().toLowerCase();
+
+  if (ext === "json") {
+    await importJSON(file);
+  } else if (["xlsx", "xls"].includes(ext)) {
+    await importExcel(file);
+  } else {
+    toast("Formato no soportado. Usa .xlsx o .json", "error");
+  }
+}
+
+async function importExcel(file) {
+  const buffer = await file.arrayBuffer();
+  const wb     = XLSX.read(buffer, { type: "array" });
+  const ws     = wb.Sheets[wb.SheetNames[0]];
+  const rows   = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+  // Flexible column mapping (same as export)
+  importBuffer = rows.map(r => ({
+    area:    r["Área"]   || r["area"]   || r["AREA"]   || "",
+    titulo:  r["Título"] || r["titulo"] || r["TITULO"] || r["Nombre del Documento"] || "",
+    version: String(r["Versión"] || r["version"] || r["VERSION"] || "00"),
+    codigo:  r["Código"] || r["codigo"] || r["CODIGO"] || "",
+    tipo:    r["Tipo"]   || r["tipo"]   || r["TIPO"]   || "FORMATO",
+    fecha:   r["Fecha"]  || r["fecha"]  || r["FECHA"]  || new Date().toISOString().split("T")[0],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  })).filter(r => r.titulo);
+
+  showImportPreview(importBuffer.length, "Excel");
+}
+
+async function importJSON(file) {
+  const text = await file.text();
+  const data = JSON.parse(text);
+
+  importBuffer = (Array.isArray(data) ? data : [data]).map(r => ({
+    area:      r.area     || "",
+    titulo:    r.titulo   || "",
+    version:   String(r.version || "00"),
+    codigo:    r.codigo   || "",
+    tipo:      r.tipo     || "FORMATO",
+    fecha:     r.fecha    || new Date().toISOString().split("T")[0],
+    fileName:  r.fileName || "",
+    fileData:  r.fileData || "",
+    fileType:  r.fileType || "",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  })).filter(r => r.titulo);
+
+  showImportPreview(importBuffer.length, "JSON");
+}
+
+function showImportPreview(count, format) {
+  $("importPreviewText").innerHTML = `Se detectaron <strong>${count} registros</strong> válidos del archivo ${format}. ¿Confirmar importación?`;
+  $("importPreview").style.display = "block";
+}
+
+async function confirmImport() {
+  if (!importBuffer.length) return;
+
+  const btn = $("confirmImportBtn");
+  btn.textContent = "Importando...";
+  btn.disabled    = true;
+
+  let ok = 0;
+  for (const doc of importBuffer) {
+    try {
+      await fsdb.collection(COLLECTION).add(doc);
+      ok++;
+    } catch (e) {
+      console.warn("Import error for doc:", doc, e);
+    }
+  }
+
+  importBuffer = [];
+  $("importPreview").style.display = "none";
+  btn.textContent = "Confirmar Importación";
+  btn.disabled    = false;
+  toast(`${ok} documentos importados correctamente ✓`, "success");
+  closeIoModal();
+}
+
+/* ============================================================
+   10. EXPORT — Excel & JSON
+   ============================================================ */
+function exportExcel() {
+  const docs = allDocs;
+  if (!docs.length) { toast("No hay datos para exportar", "warning"); return; }
+
+  const rows = docs.map(d => ({
+    "Área":                d.area,
+    "Título":              d.titulo,
+    "Versión":             d.version,
+    "Código":              d.codigo,
+    "Tipo":                d.tipo,
+    "Fecha":               d.fecha,
+    "Nombre del Documento": d.fileName || "Sin archivo",
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+
+  // Column widths
+  ws["!cols"] = [
+    { wch: 8 }, { wch: 40 }, { wch: 9 }, { wch: 18 },
+    { wch: 14 }, { wch: 12 }, { wch: 24 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Lista Maestra");
+  XLSX.writeFile(wb, `Lista_Maestra_${new Date().toISOString().split("T")[0]}.xlsx`);
+  toast("Excel exportado ✓", "success");
+}
+
+function exportJSON() {
+  const docs = allDocs;
+  if (!docs.length) { toast("No hay datos para exportar", "warning"); return; }
+
+  const blob = new Blob([JSON.stringify(docs, null, 2)], { type: "application/json" });
+  const a    = document.createElement("a");
+  a.href     = URL.createObjectURL(blob);
+  a.download = `Lista_Maestra_Backup_${Date.now()}.json`;
+  a.click();
+  toast("Backup JSON exportado ✓", "success");
+}
+
+/* ============================================================
+   11. AUTO-CODE GENERATOR
+   ============================================================ */
+$("area").addEventListener("change", () => {
+  const area = $("area").value;
+  if (!area) return;
+  const map = {
+    GG:"PE", GI:"PE", HK:"PM", FO:"PM", AB:"PM",
+    CO:"PA", GR:"PA", MT:"PA", MD:"PA", TH:"PA", TI:"PA"
+  };
+  const count   = allDocs.filter(d => d.area === area).length;
+  const num     = String(count + 1).padStart(3, "0");
+  $("codigo").value = `${map[area] || "XX"}-${area}-FO-${num}`;
+});
+
+/* ============================================================
+   12. THEME
+   ============================================================ */
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  localStorage.setItem("lm_theme", t);
+  // Swap icon
+  const icon = $("themeIcon");
+  if (t === "dark") {
+    icon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
+  } else {
+    icon.innerHTML = `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`;
+  }
+}
+
+/* ============================================================
+   13. UI BINDINGS
+   ============================================================ */
+function bindUI() {
+  // Theme toggle
+  $("themeBtn").onclick = () => { theme = theme === "light" ? "dark" : "light"; applyTheme(theme); };
+
+  // Reset form
+  $("resetBtn").onclick = resetForm;
+
+  // Search & filters
+  [searchInput, areaFilter, tipoFilter].forEach(el => el.addEventListener("input", renderTable));
+
+  // File dropzone
+  dropzone.onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    if (fileInput.files[0]) {
+      fileLabel.innerHTML = `<strong>Adjunto:</strong> ${fileInput.files[0].name}`;
+    }
+  };
+
+  // Drag & drop on dropzone
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.style.borderColor = "var(--c-primary)"; });
+  dropzone.addEventListener("dragleave", () => { dropzone.style.borderColor = ""; });
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.style.borderColor = "";
+    const f = e.dataTransfer.files[0];
+    if (f) {
+      const dt  = new DataTransfer();
+      dt.items.add(f);
+      fileInput.files = dt.files;
+      fileLabel.innerHTML = `<strong>Adjunto:</strong> ${f.name}`;
+    }
+  });
+
+  // Import/Export modal
+  $("importExportBtn").onclick = () => $("ioModal").classList.add("open");
+  $("closeIoModal").onclick    = closeIoModal;
+  $("ioModal").addEventListener("click", e => { if (e.target === $("ioModal")) closeIoModal(); });
+
+  // IO Tabs
+  document.querySelectorAll(".io-tab").forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll(".io-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      const isExport = tab.dataset.tab === "export";
+      $("exportPanel").style.display = isExport ? "" : "none";
+      $("importPanel").style.display = isExport ? "none" : "";
+    };
+  });
+
+  // Export buttons
+  $("exportExcelBtn").onclick = exportExcel;
+  $("exportJsonBtn").onclick  = exportJSON;
+
+  // Import drop area
+  const importDrop = $("importDrop");
+  importDrop.onclick = () => $("importFileInput").click();
+  importDrop.addEventListener("dragover", e => { e.preventDefault(); importDrop.classList.add("dragover"); });
+  importDrop.addEventListener("dragleave", () => importDrop.classList.remove("dragover"));
+  importDrop.addEventListener("drop", async e => {
+    e.preventDefault();
+    importDrop.classList.remove("dragover");
+    const f = e.dataTransfer.files[0];
+    if (f) await handleImportFile(f);
+  });
+
+  $("importFileInput").onchange = async e => {
+    const f = e.target.files[0];
+    if (f) await handleImportFile(f);
+  };
+
+  $("confirmImportBtn").onclick = confirmImport;
+}
+
+function closeIoModal() {
+  $("ioModal").classList.remove("open");
+  importBuffer = [];
+  $("importPreview").style.display = "none";
+  $("importFileInput").value = "";
+}
+
+/* ============================================================
+   14. UTILS
+   ============================================================ */
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload  = () => res(reader.result);
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatDate(str) {
+  if (!str) return "—";
+  const d = new Date(str + "T12:00:00");
+  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function toast(msg, type = "success") {
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      ${type === "success" ? '<polyline points="20 6 9 17 4 12"/>' : type === "error" ? '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>' : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'}
+    </svg>
+    ${msg}`;
+  $("toast-container").appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transform = "translateX(100%)"; el.style.transition = ".3s"; setTimeout(() => el.remove(), 300); }, 3500);
 }
