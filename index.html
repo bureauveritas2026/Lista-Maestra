@@ -3,864 +3,262 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lista Maestra de Documentos - Holiday Inn Miraflores</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        :root {
-            --primary: #1e40af;
-            --primary-dark: #1e3a8a;
-            --secondary: #10b981;
-            --accent: #f59e0b;
-            --bg-light: #f8fafc;
-            --bg-card: #ffffff;
-            --text-dark: #1e293b;
-            --text-light: #64748b;
-            --border: #e2e8f0;
-            --shadow: rgba(0, 0, 0, 0.1);
-            --success: #10b981;
-            --error: #ef4444;
-            --warning: #f59e0b;
-        }
-
-        [data-theme="dark"] {
-            --bg-light: #0f172a;
-            --bg-card: #1e293b;
-            --text-dark: #f1f5f9;
-            --text-light: #94a3b8;
-            --border: #334155;
-            --shadow: rgba(0, 0, 0, 0.3);
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--bg-light);
-            color: var(--text-dark);
-            line-height: 1.6;
-            transition: background 0.3s ease, color 0.3s ease;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        header {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            padding: 30px 0;
-            margin-bottom: 30px;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px var(--shadow);
-        }
-
-        header h1 {
-            font-size: 2rem;
-            margin-bottom: 8px;
-            text-align: center;
-        }
-
-        header p {
-            text-align: center;
-            opacity: 0.9;
-            font-size: 1.1rem;
-        }
-
-        .theme-toggle {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: var(--bg-card);
-            border: 2px solid var(--border);
-            border-radius: 50px;
-            padding: 10px 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            box-shadow: 0 4px 12px var(--shadow);
-            transition: all 0.3s ease;
-            z-index: 1000;
-        }
-
-        .theme-toggle:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px var(--shadow);
-        }
-
-        .card {
-            background: var(--bg-card);
-            border-radius: 16px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 20px var(--shadow);
-            border: 1px solid var(--border);
-            transition: all 0.3s ease;
-        }
-
-        .card:hover {
-            box-shadow: 0 8px 30px var(--shadow);
-        }
-
-        .card h2 {
-            color: var(--primary);
-            margin-bottom: 20px;
-            font-size: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .form-group label {
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: var(--text-dark);
-            font-size: 0.9rem;
-        }
-
-        .form-group input,
-        .form-group select {
-            padding: 12px 16px;
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            font-size: 1rem;
-            background: var(--bg-light);
-            color: var(--text-dark);
-            transition: all 0.3s ease;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
-        }
-
-        .btn {
-            padding: 12px 28px;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            justify-content: center;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(30, 64, 175, 0.3);
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, var(--secondary) 0%, #059669 100%);
-            color: white;
-        }
-
-        .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
-        }
-
-        .btn-danger {
-            background: linear-gradient(135deg, var(--error) 0%, #dc2626 100%);
-            color: white;
-            padding: 8px 16px;
-            font-size: 0.9rem;
-        }
-
-        .btn-danger:hover {
-            transform: scale(1.05);
-        }
-
-        .controls {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .search-box {
-            flex: 1;
-            min-width: 250px;
-            position: relative;
-        }
-
-        .search-box input {
-            width: 100%;
-            padding: 12px 16px 12px 45px;
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            font-size: 1rem;
-            background: var(--bg-light);
-            color: var(--text-dark);
-        }
-
-        .search-box::before {
-            content: "🔍";
-            position: absolute;
-            left: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 1.2rem;
-        }
-
-        .table-container {
-            overflow-x: auto;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: var(--bg-card);
-        }
-
-        thead {
-            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
-            color: white;
-        }
-
-        thead th {
-            padding: 16px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 0.95rem;
-            letter-spacing: 0.5px;
-        }
-
-        tbody tr {
-            border-bottom: 1px solid var(--border);
-            transition: all 0.2s ease;
-        }
-
-        tbody tr:hover {
-            background: var(--bg-light);
-        }
-
-        tbody td {
-            padding: 14px 16px;
-            color: var(--text-dark);
-            cursor: pointer;
-        }
-
-        tbody td[contenteditable="true"] {
-            background: rgba(30, 64, 175, 0.05);
-            outline: 2px solid var(--primary);
-            border-radius: 4px;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-light);
-        }
-
-        .empty-state::before {
-            content: "📄";
-            display: block;
-            font-size: 4rem;
-            margin-bottom: 15px;
-        }
-
-        .alert {
-            position: fixed;
-            top: 100px;
-            right: 20px;
-            padding: 16px 24px;
-            border-radius: 12px;
-            box-shadow: 0 8px 24px var(--shadow);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            z-index: 9999;
-            animation: slideIn 0.3s ease;
-            max-width: 400px;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        .alert-success {
-            background: var(--success);
-            color: white;
-        }
-
-        .alert-error {
-            background: var(--error);
-            color: white;
-        }
-
-        .alert-warning {
-            background: var(--warning);
-            color: white;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px var(--shadow);
-        }
-
-        .stat-card h3 {
-            font-size: 2rem;
-            margin-bottom: 8px;
-        }
-
-        .stat-card p {
-            opacity: 0.9;
-            font-size: 0.95rem;
-        }
-
-        @media (max-width: 768px) {
-            header h1 {
-                font-size: 1.5rem;
-            }
-            
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .controls {
-                flex-direction: column;
-            }
-
-            .search-box {
-                width: 100%;
-            }
-
-            table {
-                font-size: 0.85rem;
-            }
-
-            thead th, tbody td {
-                padding: 10px 8px;
-            }
-        }
-    </style>
+    <title>Lista Maestra Pro - Holiday Inn Miraflores</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Scripts (External) -->
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-    <div class="theme-toggle" onclick="toggleTheme()">
-        <span id="theme-icon">🌙</span>
-        <span id="theme-text">Modo Oscuro</span>
-    </div>
-
     <div class="container">
-        <header>
-            <h1>📋 Lista Maestra de Documentos</h1>
-            <p>Holiday Inn Miraflores - GHL Hoteles</p>
+        <!-- App Header -->
+        <header class="app-header">
+            <div class="app-brand">
+                <div style="background: white; padding: 8px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                    <i data-lucide="file-check" style="color: var(--primary); width: 32px; height: 32px;"></i>
+                </div>
+                <div>
+                    <h1>Lista Maestra Pro</h1>
+                    <p style="font-size: 0.875rem; opacity: 0.8;">Holiday Inn Miraflores - GHL Hoteles</p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <div class="live-indicator">
+                    <span class="dot"></span>
+                    Sincronizado Localmente
+                </div>
+                <button class="btn btn-secondary btn-icon" id="themeToggle" onclick="toggleTheme()" title="Cambiar Tema">
+                    <i data-lucide="moon"></i>
+                </button>
+            </div>
         </header>
 
-        <div class="stats">
+        <!-- Stats Dashboard -->
+        <div class="stats-grid">
             <div class="stat-card">
-                <h3 id="totalDocs">0</h3>
-                <p>Total Documentos</p>
+                <div class="stat-icon" style="background: rgba(37, 99, 235, 0.1); color: var(--primary);">
+                    <i data-lucide="files"></i>
+                </div>
+                <div>
+                    <h3 id="statTotal">0</h3>
+                    <p class="text-muted">Documentos Totales</p>
+                </div>
             </div>
-            <div class="stat-card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
-                <h3 id="totalAreas">0</h3>
-                <p>Áreas Activas</p>
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(16, 185, 129, 0.1); color: var(--secondary);">
+                    <i data-lucide="layers"></i>
+                </div>
+                <div>
+                    <h3 id="statAreas">0</h3>
+                    <p class="text-muted">Áreas Activas</p>
+                </div>
             </div>
-            <div class="stat-card" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                <h3 id="lastUpdate">-</h3>
-                <p>Última Actualización</p>
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--accent);">
+                    <i data-lucide="cloud-upload"></i>
+                </div>
+                <div>
+                    <h3 id="statFiles">0</h3>
+                    <p class="text-muted">Con Archivo Adjunto</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(99, 102, 241, 0.1); color: #6366f1;">
+                    <i data-lucide="history"></i>
+                </div>
+                <div>
+                    <h3 id="lastDate">-</h3>
+                    <p class="text-muted">Último Cambio</p>
+                </div>
             </div>
         </div>
 
-        <div class="card">
-            <h2>➕ Agregar Nuevo Documento</h2>
-            <form id="documentForm">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="area">Área o Proceso *</label>
-                        <select id="area" required>
-                            <option value="">Seleccionar área...</option>
-                            <option value="GG">GG - Gerencia General</option>
-                            <option value="GI">GI - Gestión Integral</option>
-                            <option value="HK">HK - House Keeping</option>
-                            <option value="AB">AB - Alimentos y Bebidas</option>
-                            <option value="FO">FO - Front Office</option>
-                            <option value="CO">CO - Contraloría</option>
-                            <option value="GR">GR - Gestión de Riesgos y Protección</option>
-                            <option value="MT">MT - Mantenimiento</option>
-                            <option value="MD">MD - Mercadeo</option>
-                            <option value="TH">TH - Talento Humano</option>
-                            <option value="TI">TI - Tecnología</option>
-                        </select>
+        <main class="main-content">
+            <!-- Sidebar: Form -->
+            <aside>
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2 id="formTitle">Nuevo Documento</h2>
+                        <button class="btn btn-secondary btn-icon" onclick="resetForm()" title="Limpiar Formulario">
+                            <i data-lucide="rotate-ccw" style="width: 14px;"></i>
+                        </button>
                     </div>
+                    <div class="card-body">
+                        <form id="docForm">
+                            <div class="form-group">
+                                <label for="area">Área o Proceso *</label>
+                                <select id="area" class="form-control" required>
+                                    <option value="">Seleccionar área...</option>
+                                    <option value="GG">GG - Gerencia General</option>
+                                    <option value="GI">GI - Gestión Integral</option>
+                                    <option value="HK">HK - House Keeping</option>
+                                    <option value="AB">AB - Alimentos y Bebidas</option>
+                                    <option value="FO">FO - Front Office</option>
+                                    <option value="CO">CO - Contraloría</option>
+                                    <option value="GR">GR - Gestión de Riesgos y Protección</option>
+                                    <option value="MT">MT - Mantenimiento</option>
+                                    <option value="MD">MD - Mercadeo</option>
+                                    <option value="TH">TH - Talento Humano</option>
+                                    <option value="TI">TI - Tecnología</option>
+                                </select>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="titulo">Título del Documento *</label>
-                        <input type="text" id="titulo" required placeholder="Ingrese el título...">
-                    </div>
+                            <div class="form-group">
+                                <label for="titulo">Título del Documento *</label>
+                                <input type="text" id="titulo" class="form-control" required placeholder="Ej: Protocolo de Limpieza">
+                            </div>
 
-                    <div class="form-group">
-                        <label for="version">Versión</label>
-                        <input type="text" id="version" value="00" placeholder="00">
-                    </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                <div class="form-group">
+                                    <label for="version">Versión</label>
+                                    <input type="text" id="version" class="form-control" value="00">
+                                </div>
+                                <div class="form-group">
+                                    <label for="tipo">Tipo</label>
+                                    <input type="text" id="tipo" class="form-control" value="FORMATO">
+                                </div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="codigo">Código (Autogenerado)</label>
-                        <input type="text" id="codigo" readonly placeholder="Se genera automáticamente" style="background: var(--border); cursor: not-allowed;">
-                    </div>
+                            <div class="form-group">
+                                <label for="codigo">Código (Autogenerado)</label>
+                                <input type="text" id="codigo" class="form-control" readonly style="background: var(--bg-main); font-family: monospace;">
+                            </div>
 
-                    <div class="form-group">
-                        <label for="tipo">Tipo</label>
-                        <input type="text" id="tipo" value="FORMATO" readonly style="background: var(--border); cursor: not-allowed;">
-                    </div>
+                            <div class="form-group">
+                                <label for="fecha">Fecha de Emisión</label>
+                                <input type="date" id="fecha" class="form-control" required>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="fecha">Fecha</label>
-                        <input type="date" id="fecha" required>
+                            <div class="form-group">
+                                <label>Documento Adjunto (PDF/Excel/Word)</label>
+                                <div id="dropzone" class="dropzone">
+                                    <i data-lucide="upload-cloud" style="width: 32px; height: 32px; color: var(--primary); margin-bottom: 0.5rem;"></i>
+                                    <p style="font-size: 0.8rem; color: var(--text-muted);" id="fileStatus">Click o arrastra para subir</p>
+                                    <input type="file" id="fileInput" hidden>
+                                </div>
+                            </div>
+
+                            <button type="submit" id="submitBtn" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 1rem;">
+                                <i data-lucide="plus"></i>
+                                Agregar Documento
+                            </button>
+                        </form>
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary">
-                    <span>➕</span>
-                    Agregar Documento
-                </button>
-            </form>
-        </div>
-
-        <div class="card">
-            <h2>📊 Documentos Registrados</h2>
-            
-            <div class="controls">
-                <div class="search-box">
-                    <input type="text" id="searchInput" placeholder="Buscar documentos...">
+                <!-- Backup/Restore -->
+                <div class="card" style="margin-top: 1.5rem; background: rgba(37, 99, 235, 0.05);">
+                    <div class="card-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem;">
+                        <button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.5rem;" onclick="exportToJSON()">
+                            <i data-lucide="download-cloud" style="width: 14px;"></i> Backup
+                        </button>
+                        <button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.5rem;" onclick="document.getElementById('importInput').click()">
+                            <i data-lucide="upload-cloud" style="width: 14px;"></i> Importar
+                        </button>
+                        <input type="file" id="importInput" hidden accept=".json" onchange="importFromJSON(this.files[0])">
+                    </div>
                 </div>
-                
-                <select id="filterArea" style="padding: 12px 16px; border: 2px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text-dark);">
-                    <option value="">Todas las áreas</option>
-                    <option value="GG">GG - Gerencia General</option>
-                    <option value="GI">GI - Gestión Integral</option>
-                    <option value="HK">HK - House Keeping</option>
-                    <option value="AB">AB - Alimentos y Bebidas</option>
-                    <option value="FO">FO - Front Office</option>
-                    <option value="CO">CO - Contraloría</option>
-                    <option value="GR">GR - Gestión de Riesgos y Protección</option>
-                    <option value="MT">MT - Mantenimiento</option>
-                    <option value="MD">MD - Mercadeo</option>
-                    <option value="TH">TH - Talento Humano</option>
-                    <option value="TI">TI - Tecnología</option>
-                </select>
+            </aside>
 
-                <button class="btn btn-success" onclick="exportToExcel()">
-                    <span>📥</span>
-                    Exportar a Excel
-                </button>
-            </div>
-
-            <div class="table-container">
-                <table id="documentsTable">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Área o Proceso</th>
-                            <th>Título del Documento</th>
-                            <th>Versión</th>
-                            <th>Código</th>
-                            <th>Tipo</th>
-                            <th>Fecha</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableBody">
-                        <tr>
-                            <td colspan="8" class="empty-state">
-                                <strong>No hay documentos registrados</strong><br>
-                                Comienza agregando tu primer documento
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+            <!-- Main Panel: Table -->
+            <section>
+                <div class="card">
+                    <div class="card-header" style="background: var(--bg-main); border-bottom: none; padding-bottom: 0;">
+                        <div style="display: flex; gap: 1rem; width: 100%; flex-wrap: wrap; margin-bottom: 1.25rem;">
+                            <div style="position: relative; flex: 1; min-width: 300px;">
+                                <i data-lucide="search" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); width: 18px; color: var(--text-muted);"></i>
+                                <input type="text" id="searchInput" class="form-control" placeholder="Buscar por título o código..." style="padding-left: 2.75rem;">
+                            </div>
+                            <select id="areaFilter" class="form-control" style="width: 200px;">
+                                <option value="">Todas las Áreas</option>
+                                <option value="GG">Gerencia General</option>
+                                <option value="GI">Gestión Integral</option>
+                                <option value="HK">House Keeping</option>
+                                <option value="AB">Alimentos y Bebidas</option>
+                                <option value="FO">Front Office</option>
+                                <option value="CO">Contraloría</option>
+                                <option value="GR">Gestión de Riesgos</option>
+                                <option value="MT">Mantenimiento</option>
+                                <option value="MD">Mercadeo</option>
+                                <option value="TH">Talento Humano</option>
+                                <option value="TI">Tecnología</option>
+                            </select>
+                            <button class="btn btn-success" onclick="exportToExcel()">
+                                <i data-lucide="file-spreadsheet"></i>
+                                Exportar Excel
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Área</th>
+                                    <th>Documento</th>
+                                    <th>Ver.</th>
+                                    <th>Código</th>
+                                    <th>Fecha</th>
+                                    <th>Adjunto</th>
+                                    <th style="width: 100px;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <!-- Loaded via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Scripts (App) -->
+    <script src="app.js"></script>
     <script>
-        // Variables globales
-        let documents = [];
-        let counters = {};
-        let editingRow = null;
-
-        // Cargar datos del localStorage al iniciar
-        window.addEventListener('DOMContentLoaded', () => {
-            loadFromLocalStorage();
-            setTodayDate();
-            updateStats();
-            renderTable();
-        });
-
-        // Establecer fecha actual
-        function setTodayDate() {
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('fecha').value = today;
-        }
-
-        // Generar código automático
-        document.getElementById('area').addEventListener('change', function() {
-            const area = this.value;
-            if (!area) {
-                document.getElementById('codigo').value = '';
-                return;
+        // Set default date to today
+        document.getElementById('fecha').valueAsDate = new Date();
+        
+        // Update last change date stat
+        async function updateLastChange() {
+            const last = await db.documentos.orderBy('id').last();
+            if (last) {
+                document.getElementById('lastDate').textContent = new Date(last.id).toLocaleDateString();
             }
-
-            const processMap = {
-                'GG': 'PE', 'GI': 'PE',
-                'HK': 'PM', 'FO': 'PM', 'AB': 'PM',
-                'CO': 'PA', 'GR': 'PA', 'MT': 'PA', 'MD': 'PA', 'TH': 'PA', 'TI': 'PA'
-            };
-
-            const processType = processMap[area];
-            const areaDocs = documents.filter(doc => doc.area === area);
-
-            let maxNumber = 0;
-            
-            areaDocs.forEach(doc => {
-                const match = doc.codigo.match(/(\d+)$/);
-                if (match) {
-                    const num = parseInt(match[1]);
-                    if (num > maxNumber) {
-                        maxNumber = num;
-                    }
-                }
-            });
-            
-            const nextNumber = maxNumber + 1;
-            const code = `${processType}-${area}-FO-${String(nextNumber).padStart(3, '0')}`;
-            
-            document.getElementById('codigo').value = code;
-        });
-
-        // Manejar envío del formulario
-        document.getElementById('documentForm').addEventListener('submit', function(e) {
+        }
+        
+        // Drag and drop for file upload
+        const dropZone = document.getElementById('dropzone');
+        dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
-
-            const area = document.getElementById('area').value;
-            const titulo = document.getElementById('titulo').value.trim();
-            const version = document.getElementById('version').value.trim();
-            const codigo = document.getElementById('codigo').value;
-            const tipo = document.getElementById('tipo').value;
-            const fecha = document.getElementById('fecha').value;
-
-            if (!area || !titulo || !version || !fecha) {
-                showAlert('Por favor completa todos los campos obligatorios', 'error');
-                return;
+            dropZone.style.borderColor = 'var(--primary)';
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = 'var(--border)';
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--border)';
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                document.getElementById('fileInput').files = files;
+                document.getElementById('fileStatus').textContent = `Seleccionado: ${files[0].name}`;
             }
-
-            const documento = {
-                id: Date.now(),
-                area,
-                titulo,
-                version,
-                codigo,
-                tipo,
-                fecha
-            };
-
-            documents.push(documento);
-            counters[area] = (counters[area] || 0) + 1;
-
-            saveToLocalStorage();
-            renderTable();
-            updateStats();
-            this.reset();
-            setTodayDate();
-            document.getElementById('codigo').value = '';
-            
-            showAlert('Documento agregado exitosamente', 'success');
         });
 
-        // Renderizar tabla
-        function renderTable(filteredDocs = null) {
-            const tbody = document.getElementById('tableBody');
-            const docsToRender = filteredDocs || documents;
-
-            if (docsToRender.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="8" class="empty-state">
-                            <strong>No hay documentos registrados</strong><br>
-                            ${filteredDocs ? 'No se encontraron resultados' : 'Comienza agregando tu primer documento'}
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            tbody.innerHTML = docsToRender.map((doc, index) => `
-                <tr data-id="${doc.id}">
-                    <td>${index + 1}</td>
-                    <td contenteditable="true" data-field="area">${doc.area}</td>
-                    <td contenteditable="true" data-field="titulo">${doc.titulo}</td>
-                    <td contenteditable="true" data-field="version">${doc.version}</td>
-                    <td>${doc.codigo}</td>
-                    <td>${doc.tipo}</td>
-                    <td contenteditable="true" data-field="fecha">${doc.fecha}</td>
-                    <td>
-                        <button class="btn btn-danger" onclick="deleteDocument(${doc.id})">
-                            🗑️ Eliminar
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-
-            // Agregar event listeners para edición inline
-            tbody.querySelectorAll('td[contenteditable="true"]').forEach(cell => {
-                cell.addEventListener('blur', function() {
-                    const row = this.closest('tr');
-                    const docId = parseInt(row.dataset.id);
-                    const field = this.dataset.field;
-                    const newValue = this.textContent.trim();
-
-                    const doc = documents.find(d => d.id === docId);
-                    if (doc) {
-                        doc[field] = newValue;
-                        saveToLocalStorage();
-                        showAlert('Documento actualizado', 'success');
-                    }
-                });
-            });
-        }
-
-        // Eliminar documento
-        function deleteDocument(id) {
-            if (!confirm('¿Estás seguro de eliminar este documento?')) return;
-        
-            // Eliminar documento
-            documents = documents.filter(doc => doc.id !== id);
-        
-            // Reiniciar contadores
-            counters = {};
-        
-            // Recalcular contadores según documentos existentes
-            documents.forEach(doc => {
-                counters[doc.area] = (counters[doc.area] || 0) + 1;
-            });
-        
-            saveToLocalStorage();
-            renderTable();
-            updateStats();
-        
-            showAlert('Documento eliminado', 'warning');
-        }
-
-        // Búsqueda
-        document.getElementById('searchInput').addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const filterArea = document.getElementById('filterArea').value;
-
-            let filtered = documents;
-
-            if (filterArea) {
-                filtered = filtered.filter(doc => doc.area === filterArea);
-            }
-
-            if (searchTerm) {
-                filtered = filtered.filter(doc => 
-                    doc.titulo.toLowerCase().includes(searchTerm) ||
-                    doc.codigo.toLowerCase().includes(searchTerm) ||
-                    doc.area.toLowerCase().includes(searchTerm)
-                );
-            }
-
-            renderTable(filtered);
-        });
-
-        // Filtro por área
-        document.getElementById('filterArea').addEventListener('change', function() {
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            let filtered = documents;
-
-            if (this.value) {
-                filtered = filtered.filter(doc => doc.area === this.value);
-            }
-
-            if (searchTerm) {
-                filtered = filtered.filter(doc => 
-                    doc.titulo.toLowerCase().includes(searchTerm) ||
-                    doc.codigo.toLowerCase().includes(searchTerm)
-                );
-            }
-
-            renderTable(filtered);
-        });
-
-        // Actualizar estadísticas
-        function updateStats() {
-            document.getElementById('totalDocs').textContent = documents.length;
-            
-            const uniqueAreas = new Set(documents.map(doc => doc.area));
-            document.getElementById('totalAreas').textContent = uniqueAreas.size;
-
-            if (documents.length > 0) {
-                const lastDoc = documents[documents.length - 1];
-                document.getElementById('lastUpdate').textContent = new Date(lastDoc.fecha).toLocaleDateString('es-PE');
-            }
-        }
-
-        // LocalStorage
-        function saveToLocalStorage() {
-            localStorage.setItem('documents', JSON.stringify(documents));
-            localStorage.setItem('counters', JSON.stringify(counters));
-        }
-
-        function loadFromLocalStorage() {
-            const savedDocs = localStorage.getItem('documents');
-            const savedCounters = localStorage.getItem('counters');
-
-            if (savedDocs) {
-                documents = JSON.parse(savedDocs);
-            }
-
-            if (savedCounters) {
-                counters = JSON.parse(savedCounters);
-            }
-        }
-
-        // Exportar a Excel
-        function exportToExcel() {
-            if (documents.length === 0) {
-                showAlert('No hay documentos para exportar', 'warning');
-                return;
-            }
-
-            const ws_data = [
-                ['LISTA MAESTRA DE DOCUMENTOS'],
-                ['Holiday Inn Miraflores - GHL Hoteles'],
-                [`Fecha de exportación: ${new Date().toLocaleDateString('es-PE')}`],
-                [],
-                ['#', 'Área o Proceso', 'Título del Documento', 'Versión', 'Código', 'Tipo', 'Fecha']
-            ];
-
-            documents.forEach((doc, index) => {
-                ws_data.push([
-                    index + 1,
-                    doc.area,
-                    doc.titulo,
-                    doc.version,
-                    doc.codigo,
-                    doc.tipo,
-                    doc.fecha
-                ]);
-            });
-
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet(ws_data);
-
-            // Ancho de columnas
-            ws['!cols'] = [
-                { wch: 5 },
-                { wch: 20 },
-                { wch: 40 },
-                { wch: 10 },
-                { wch: 20 },
-                { wch: 15 },
-                { wch: 12 }
-            ];
-
-            // Estilos (merge cells para título)
-            ws['!merges'] = [
-                { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-                { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
-                { s: { r: 2, c: 0 }, e: { r: 2, c: 6 } }
-            ];
-
-            XLSX.utils.book_append_sheet(wb, ws, 'Documentos');
-            XLSX.writeFile(wb, 'Lista_Maestra_Documentos.xlsx');
-
-            showAlert('Excel exportado exitosamente', 'success');
-        }
-
-        // Alternar tema
-        function toggleTheme() {
-            const html = document.documentElement;
-            const currentTheme = html.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            
-            html.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-
-            const icon = document.getElementById('theme-icon');
-            const text = document.getElementById('theme-text');
-
-            if (newTheme === 'dark') {
-                icon.textContent = '☀️';
-                text.textContent = 'Modo Claro';
-            } else {
-                icon.textContent = '🌙';
-                text.textContent = 'Modo Oscuro';
-            }
-        }
-
-        // Cargar tema guardado
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-            document.getElementById('theme-icon').textContent = '☀️';
-            document.getElementById('theme-text').textContent = 'Modo Claro';
-        }
-
-        // Mostrar alertas
-        function showAlert(message, type) {
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            
-            const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️';
-            alert.innerHTML = `<span style="font-size: 1.3rem;">${icon}</span><span>${message}</span>`;
-            
-            document.body.appendChild(alert);
-
-            setTimeout(() => {
-                alert.style.animation = 'slideIn 0.3s ease reverse';
-                setTimeout(() => alert.remove(), 300);
-            }, 3000);
-        }
+        // Live stats update
+        db.documentos.hook('creating', () => setTimeout(updateLastChange, 100));
+        db.documentos.hook('updating', () => setTimeout(updateLastChange, 100));
+        updateLastChange();
     </script>
 </body>
 </html>
