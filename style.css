@@ -696,3 +696,7 @@ tbody tr:last-child td { border-bottom: none; }
   transition: opacity .15s ease;
   animation: fadeIn .15s ease;
 }
+
+/* ---------- SPINNING ICON ---------- */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinning { animation: spin .8s linear infinite; display: inline-block; }

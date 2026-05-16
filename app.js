@@ -18,7 +18,95 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const fsdb = firebase.firestore();
+const auth = firebase.auth();
 const COLLECTION = "documentos";
+
+/* ============================================================
+   GOOGLE AUTH — para subir archivos a Drive
+   ============================================================ */
+let driveAccessToken = null;
+let driveUser        = null;
+
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+googleProvider.addScope("https://www.googleapis.com/auth/drive.file");
+
+auth.onAuthStateChanged(user => {
+  driveUser = user;
+  updateDriveAuthUI(user);
+});
+
+function updateDriveAuthUI(user) {
+  const chip      = document.getElementById("driveAuthChip");
+  const emailEl   = document.getElementById("driveAuthEmail");
+  const signInBtn = document.getElementById("driveSignInBtn");
+  const signOutBtn= document.getElementById("driveSignOutBtn");
+  if (!chip) return;
+  if (user) {
+    chip.style.display     = "flex";
+    emailEl.textContent    = user.displayName || user.email;
+    signInBtn.style.display  = "none";
+    signOutBtn.style.display = "";
+  } else {
+    chip.style.display       = "none";
+    signInBtn.style.display  = "";
+    signOutBtn.style.display = "none";
+    driveAccessToken = null;
+  }
+}
+
+async function driveSignIn() {
+  try {
+    const result     = await auth.signInWithPopup(googleProvider);
+    driveAccessToken = result.credential.accessToken;
+    toast("Conectado con Google Drive ✓", "success");
+  } catch (err) {
+    toast("Error al conectar: " + err.message, "error");
+  }
+}
+
+async function driveSignOut() {
+  await auth.signOut();
+  driveAccessToken = null;
+  toast("Desconectado de Google Drive", "info");
+}
+
+async function getAccessToken() {
+  if (driveAccessToken) return driveAccessToken;
+  const result = await auth.signInWithPopup(googleProvider);
+  driveAccessToken = result.credential.accessToken;
+  return driveAccessToken;
+}
+
+async function uploadToDrive(file, onProgress) {
+  const token = await getAccessToken();
+
+  // Step 1 — initiate resumable upload
+  const metadata = { name: file.name, parents: [DRIVE_FOLDER_ID] };
+  const initRes  = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink,mimeType",
+    {
+      method:  "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": file.size },
+      body:    JSON.stringify(metadata),
+    }
+  );
+  if (!initRes.ok) throw new Error(`Drive init error: ${initRes.status}`);
+  const uploadUrl = initRes.headers.get("Location");
+
+  // Step 2 — upload with XMLHttpRequest for progress tracking
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)); };
+    xhr.onload = () => {
+      if (xhr.status === 200 || xhr.status === 201) resolve(JSON.parse(xhr.responseText));
+      else reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.send(file);
+  });
+}
 
 /* ============================================================
    2. LOCAL FALLBACK (IndexedDB via raw API — no Dexie needed)
@@ -530,37 +618,97 @@ fsdb.collection(REPO_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snap =>
   renderRepoTable();
 }, err => console.warn("Repo snapshot error:", err));
 
-// Form submit — driveLink is always the fixed folder
+// Form submit — upload file to Drive then save metadata to Firestore
 document.getElementById("repoForm").onsubmit = async e => {
   e.preventDefault();
-  const data = {
-    identificador: document.getElementById("repoIdentificador").value.trim(),
-    area:          document.getElementById("repoArea").value,
-    nombre:        document.getElementById("repoNombre").value.trim(),
-    tipo:          document.getElementById("repoTipo").value,
-    fecha:         document.getElementById("repoFecha").value,
-    descripcion:   document.getElementById("repoDescripcion").value.trim(),
-    driveLink:     DRIVE_FOLDER_URL,   // always the shared folder
-    updatedAt:     Date.now(),
-  };
+
+  const file = document.getElementById("repoFileInput").files[0];
+
+  // Require a file for new entries; editing is allowed without re-upload
+  if (!file && !repoEditId) {
+    toast("Selecciona un archivo para subir a Drive", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("repoSubmitBtn");
+  btn.disabled = true;
+  btn.textContent = file ? "Subiendo..." : "Guardando...";
+
+  let driveLink   = DRIVE_FOLDER_URL;
+  let driveFileId = repoEditId ? (repoAllDocs.find(d => d.id === repoEditId)?.driveFileId || "") : "";
+  let nombre      = document.getElementById("repoNombre").value.trim() || (file ? file.name : "");
+
   try {
+    if (file) {
+      // Show progress bar
+      const progress    = document.getElementById("repoUploadProgress");
+      const progressBar = document.getElementById("repoProgressBar");
+      const progressPct = document.getElementById("repoProgressPct");
+      progress.style.display = "block";
+
+      const driveFile = await uploadToDrive(file, pct => {
+        progressBar.style.width = pct + "%";
+        progressPct.textContent  = pct + "%";
+      });
+
+      progress.style.display = "none";
+      driveLink   = driveFile.webViewLink || DRIVE_FOLDER_URL;
+      driveFileId = driveFile.id;
+      nombre      = nombre || driveFile.name;
+
+      // Auto-detect tipo from mime
+      const mimeToTipo = {
+        "application/pdf": "PDF",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+        "application/msword": "Word",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+        "application/vnd.ms-excel": "Excel",
+        "application/zip": "ZIP",
+        "application/x-zip-compressed": "ZIP",
+        "image/jpeg": "Imagen", "image/png": "Imagen", "image/gif": "Imagen", "image/webp": "Imagen",
+      };
+      const autoTipo = mimeToTipo[driveFile.mimeType];
+      if (autoTipo) document.getElementById("repoTipo").value = autoTipo;
+    }
+
+    const data = {
+      identificador: document.getElementById("repoIdentificador").value.trim(),
+      area:          document.getElementById("repoArea").value,
+      nombre,
+      tipo:          document.getElementById("repoTipo").value,
+      fecha:         document.getElementById("repoFecha").value,
+      descripcion:   document.getElementById("repoDescripcion").value.trim(),
+      driveLink,
+      driveFileId,
+      updatedAt:     Date.now(),
+    };
+
     if (repoEditId) {
       await fsdb.collection(REPO_COLLECTION).doc(repoEditId).update(data);
       toast("Registro actualizado ✓", "success");
     } else {
       data.createdAt = Date.now();
       await fsdb.collection(REPO_COLLECTION).add(data);
-      toast("Archivo registrado ✓", "success");
+      toast(file ? `"${nombre}" guardado en Drive ✓` : "Registro guardado ✓", "success");
     }
+
     repoResetForm();
-  } catch (err) { toast("Error: " + err.message, "error"); }
+  } catch (err) {
+    console.error(err);
+    toast("Error: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Guardar en Drive`;
+  }
 };
 
 function repoResetForm() {
   document.getElementById("repoForm").reset();
+  document.getElementById("repoFileInput").value = "";
+  document.getElementById("repoFileLabel").innerHTML = "<strong>Clic o arrastra</strong> cualquier archivo (PDF, Word, ZIP...)";
   repoEditId = null;
-  document.getElementById("repoFormTitle").textContent  = "Registrar Archivo";
-  document.getElementById("repoSubmitBtn").textContent   = "Registrar Archivo";
+  document.getElementById("repoFormTitle").textContent = "Registrar Archivo";
+  document.getElementById("repoSubmitBtn").innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Guardar en Drive`;
 }
 
 async function repoEditDoc(id) {
@@ -573,9 +721,11 @@ async function repoEditDoc(id) {
   document.getElementById("repoTipo").value           = doc.tipo          || "PDF";
   document.getElementById("repoFecha").value          = doc.fecha         || "";
   document.getElementById("repoDescripcion").value    = doc.descripcion   || "";
-  // driveLink is always the shared folder — no need to populate it
+  document.getElementById("repoFileLabel").innerHTML  = doc.nombre
+    ? `<strong>Archivo actual:</strong> ${doc.nombre} <span style='color:var(--text-muted)'>(elige otro para reemplazar)</span>`
+    : "<strong>Clic o arrastra</strong> cualquier archivo";
   document.getElementById("repoFormTitle").textContent = "Editando Archivo";
-  document.getElementById("repoSubmitBtn").textContent = "Guardar Cambios";
+  document.getElementById("repoSubmitBtn").innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar Cambios`;
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -757,6 +907,39 @@ function bindUI() {
   };
 
   $("confirmImportBtn").onclick = confirmImport;
+
+  // ── Repo Drive file dropzone ──────────────────────────────────
+  const repoDrop      = document.getElementById("repoDrop");
+  const repoFileInput = document.getElementById("repoFileInput");
+  const repoFileLabel = document.getElementById("repoFileLabel");
+
+  if (repoDrop) {
+    repoDrop.onclick = () => repoFileInput.click();
+    repoDrop.addEventListener("dragover",  e => { e.preventDefault(); repoDrop.style.borderColor = "var(--c-primary)"; });
+    repoDrop.addEventListener("dragleave", () => { repoDrop.style.borderColor = ""; });
+    repoDrop.addEventListener("drop", e => {
+      e.preventDefault();
+      repoDrop.style.borderColor = "";
+      const f = e.dataTransfer.files[0];
+      if (f) {
+        const dt  = new DataTransfer();
+        dt.items.add(f);
+        repoFileInput.files = dt.files;
+        repoFileLabel.innerHTML = `<strong>Seleccionado:</strong> ${f.name} <span style='color:var(--text-muted)'>(${(f.size/1024/1024).toFixed(2)} MB)</span>`;
+        // Auto-fill nombre if empty
+        const nombreEl = document.getElementById("repoNombre");
+        if (!nombreEl.value) nombreEl.value = f.name;
+      }
+    });
+    repoFileInput.onchange = () => {
+      const f = repoFileInput.files[0];
+      if (f) {
+        repoFileLabel.innerHTML = `<strong>Seleccionado:</strong> ${f.name} <span style='color:var(--text-muted)'>(${(f.size/1024/1024).toFixed(2)} MB)</span>`;
+        const nombreEl = document.getElementById("repoNombre");
+        if (!nombreEl.value) nombreEl.value = f.name;
+      }
+    };
+  }
 }
 
 function closeIoModal() {
