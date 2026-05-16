@@ -24,7 +24,7 @@ const COLLECTION = "documentos";
    GOOGLE APPS SCRIPT — para subir archivos a Drive sin login
    ============================================================ */
 // IMPORTANTE: Aquí debes pegar la URL Web App generada por Google Apps Script
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcvSy_acjwSEbnZF9DXCoOWQvWljftcy_eoeX3pFvXW3NNEfuVxMh8ABmCiItyYdDi5A/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyMiHlhZYpZQrb31-qtmqCwVfklnItH4oOxpOO21bC2j8MFPH7Nw-hH5oAJG8WuKPqSyQ/exec";
 
 function fileToBase64String(file) {
   return new Promise((resolve, reject) => {
