@@ -17,7 +17,8 @@
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
 </head>
 <body>
     <div class="container">
@@ -35,11 +36,8 @@
             <div style="display: flex; gap: 1rem; align-items: center;">
                 <div class="live-indicator" id="syncStatus">
                     <span class="dot"></span>
-                    Sincronizado Localmente
+                    Conectando...
                 </div>
-                <button class="btn btn-secondary btn-icon" id="cloudConnectBtn" onclick="openSettings()" title="Conectar a la Nube">
-                    <i data-lucide="cloud"></i>
-                </button>
                 <button class="btn btn-secondary btn-icon" id="themeToggle" onclick="toggleTheme()" title="Cambiar Tema">
                     <i data-lucide="moon"></i>
                 </button>
@@ -277,44 +275,10 @@
             }
         }
 
-        // Settings Modal Toggle
-        function openSettings() {
-            document.getElementById('settingsModal').style.display = 'flex';
-        }
-        function closeSettings() {
-            document.getElementById('settingsModal').style.display = 'none';
-        }
+        // Settings Modal Toggle (Removed for Gun.js auto-sync)
+        function openSettings() { showToast("Sincronización automática activada", "info"); }
     </script>
 
-    <!-- Settings Modal -->
-    <div id="settingsModal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="card-header">
-                <h2>Conexión a la Nube (Supabase)</h2>
-                <button class="btn btn-secondary btn-icon" onclick="closeSettings()"><i data-lucide="x"></i></button>
-            </div>
-            <div class="card-body">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-                    Para sincronizar en tiempo real con otros dispositivos, crea un proyecto en <b>supabase.com</b> y pega tus credenciales aquí.
-                </p>
-                <div class="form-group">
-                    <label>Supabase URL</label>
-                    <input type="text" id="supabaseUrl" class="form-control" placeholder="https://xyz.supabase.co">
-                </div>
-                <div class="form-group">
-                    <label>Supabase Anon Key</label>
-                    <input type="password" id="supabaseKey" class="form-control" placeholder="eyJhbGciOiJIUzI1NiI...">
-                </div>
-                <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-                    <button class="btn btn-primary" style="flex: 1;" onclick="saveCloudSettings()">
-                        <i data-lucide="cloud-lightning"></i> Conectar Ahora
-                    </button>
-                    <button class="btn btn-danger" style="flex: 1;" onclick="disconnectCloud()">
-                        <i data-lucide="cloud-off"></i> Desconectar
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- Modal removed as Gun.js is zero-config -->
 </body>
 </html>

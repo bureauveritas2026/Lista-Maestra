@@ -1,6 +1,6 @@
 /* 
     Lista Maestra - Core Logic 
-    Powered by Dexie.js & Supabase
+    Powered by Dexie.js & Gun.js (Real-time Online)
 */
 
 // Initialize Local Database
@@ -10,33 +10,43 @@ db.version(2).stores({
     settings: 'key, value'
 });
 
-// Supabase Configuration
-let supabase = null;
-let isCloud = false;
+// Initialize Gun.js (Zero-Setup Online DB)
+// Using a unique key based on the repository to avoid collisions
+const GUN_KEY = 'bureauveritas2026-lista-maestra-v1';
+const gun = Gun({
+    peers: [
+        'https://gun-manhattan.herokuapp.com/gun',
+        'https://gun-ams1.herokuapp.com/gun'
+    ]
+});
+const gunDocs = gun.get(GUN_KEY).get('documentos');
 
-async function initSupabase() {
-    const url = localStorage.getItem('supabaseUrl');
-    const key = localStorage.getItem('supabaseKey');
-
-    if (url && key) {
-        try {
-            supabase = supabase.createClient(url, key);
-            isCloud = true;
-            document.getElementById('syncStatus').innerHTML = '<span class="dot"></span> Sincronizado en la Nube';
-            document.getElementById('syncStatus').style.color = 'var(--primary)';
+function initSync() {
+    document.getElementById('syncStatus').innerHTML = '<span class="dot"></span> Online (Sincronizado)';
+    document.getElementById('syncStatus').style.color = 'var(--secondary)';
+    
+    // Listen for changes from other peers
+    gunDocs.map().on(async (data, id) => {
+        if (!data) return;
+        
+        // Update local Dexie if data is newer or missing
+        const local = await db.documentos.get(parseInt(id) || id);
+        if (!local || local.fecha_actualizacion < data.fecha_actualizacion) {
+            // Convert Base64 back to Blob if needed
+            let fileBlob = data.fileBlob;
+            if (typeof fileBlob === 'string' && fileBlob.startsWith('data:')) {
+                const res = await fetch(fileBlob);
+                fileBlob = await res.blob();
+            }
             
-            // Subscribe to real-time changes
-            supabase
-                .channel('schema-db-changes')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'documentos' }, () => {
-                    loadData();
-                })
-                .subscribe();
-        } catch (err) {
-            console.error("Supabase connection error:", err);
-            isCloud = false;
+            await db.documentos.put({
+                ...data,
+                id: isNaN(id) ? id : parseInt(id),
+                fileBlob: fileBlob
+            });
+            loadData();
         }
-    }
+    });
 }
 
 // App State
@@ -76,16 +86,10 @@ async function loadData() {
 
     let docs = [];
 
-    if (isCloud) {
-        let query = supabase.from('documentos').select('*');
-        if (area) query = query.eq('area', area);
-        const { data, error } = await query;
-        if (!error) docs = data;
-    } else {
-        let collection = db.documentos.toCollection();
-        if (area) collection = db.documentos.where('area').equals(area);
-        docs = await collection.toArray();
-    }
+    // Always load from local Dexie (which is synced with Gun)
+    let collection = db.documentos.toCollection();
+    if (area) collection = db.documentos.where('area').equals(area);
+    docs = await collection.toArray();
 
     if (searchTerm) {
         docs = docs.filter(d => 
@@ -175,44 +179,40 @@ docForm.onsubmit = async (e) => {
         codigo: document.getElementById('codigo').value,
         tipo: document.getElementById('tipo').value,
         fecha: document.getElementById('fecha').value,
+        fecha_actualizacion: Date.now()
     };
 
     try {
-        if (isCloud) {
-            let fileUrl = null;
-            if (fileBlob) {
-                const filePath = `${Date.now()}_${fileName}`;
-                const { data, error } = await supabase.storage.from('documentos').upload(filePath, fileBlob);
-                if (error) throw error;
-                fileUrl = filePath;
-            }
+        let id = editModeId || Date.now();
+        let gunPayload = { ...docData, fileName, id: id.toString() };
 
-            const payload = { ...docData, fileName, fileBlob: fileUrl };
-            if (editModeId) {
-                const { error } = await supabase.from('documentos').update(payload).eq('id', editModeId);
-                if (error) throw error;
-                showToast("Documento actualizado en la nube");
+        // Handle File (Convert to Base64 for Gun sync if small enough)
+        if (fileBlob) {
+            if (fileBlob.size > 2 * 1024 * 1024) { // 2MB Limit for sync
+                showToast("Archivo muy grande para sincronización inmediata (>2MB). Se guardará localmente.", "warning");
+                // Store locally only
             } else {
-                const { error } = await supabase.from('documentos').insert([payload]);
-                if (error) throw error;
-                showToast("Documento guardado en la nube");
+                const reader = new FileReader();
+                const base64 = await new Promise(resolve => {
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(fileBlob);
+                });
+                gunPayload.fileBlob = base64;
             }
-        } else {
-            const localPayload = { ...docData, fileName, fileBlob };
-            if (editModeId) {
-                const oldDoc = await db.documentos.get(editModeId);
-                if (!fileBlob) {
-                    localPayload.fileBlob = oldDoc.fileBlob;
-                    localPayload.fileName = oldDoc.fileName;
-                }
-                await db.documentos.update(editModeId, localPayload);
-                showToast("Documento actualizado localmente");
-            } else {
-                await db.documentos.add(localPayload);
-                showToast("Documento guardado localmente");
-            }
+        } else if (editModeId) {
+            const oldDoc = await db.documentos.get(editModeId);
+            gunPayload.fileBlob = oldDoc.fileBlob;
+            gunPayload.fileName = oldDoc.fileName;
         }
-        
+
+        // Save to Gun (Online)
+        gunDocs.get(id.toString()).put(gunPayload);
+
+        // Save to Dexie (Local)
+        const localPayload = { ...docData, id, fileName, fileBlob: fileBlob || gunPayload.fileBlob };
+        await db.documentos.put(localPayload);
+
+        showToast(editModeId ? "Documento actualizado" : "Documento guardado");
         resetForm();
         loadData();
     } catch (err) {
@@ -253,41 +253,30 @@ async function editDoc(id) {
 
 async function deleteDoc(id) {
     if (confirm("¿Estás seguro de eliminar este registro?")) {
-        if (isCloud) {
-            const { error } = await supabase.from('documentos').delete().eq('id', id);
-            if (error) {
-                showToast("Error al eliminar en la nube", "danger");
-                return;
-            }
-        } else {
-            await db.documentos.delete(id);
-        }
+        // Delete from Gun
+        gunDocs.get(id.toString()).put(null);
+        // Delete from Local
+        await db.documentos.delete(id);
+        
         showToast("Registro eliminado");
         loadData();
     }
 }
 
 async function downloadFile(id) {
-    const doc = currentDocs.find(d => d.id === id);
-    if (!doc) return;
-
-    if (isCloud && doc.fileBlob) {
-        const { data, error } = await supabase.storage.from('documentos').download(doc.fileBlob);
-        if (error) {
-            showToast("Error al descargar de la nube", "danger");
-            return;
+    const doc = await db.documentos.get(id);
+    if (doc && doc.fileBlob) {
+        let blob = doc.fileBlob;
+        if (typeof blob === 'string' && blob.startsWith('data:')) {
+            const res = await fetch(blob);
+            blob = await res.blob();
         }
-        const url = URL.createObjectURL(data);
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = doc.fileName;
         a.click();
-    } else if (doc.fileBlob) {
-        const url = URL.createObjectURL(doc.fileBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = doc.fileName;
-        a.click();
+        URL.revokeObjectURL(url);
     }
 }
 
@@ -443,53 +432,26 @@ document.getElementById('area').addEventListener('change', async () => {
     document.getElementById('codigo').value = `${processType}-${area}-FO-${nextNumber}`;
 });
 
-// Cloud Settings
-function saveCloudSettings() {
-    const url = document.getElementById('supabaseUrl').value.trim();
-    const key = document.getElementById('supabaseKey').value.trim();
-
-    if (!url || !key) {
-        showToast("Por favor ingresa URL y Key", "warning");
-        return;
-    }
-
-    localStorage.setItem('supabaseUrl', url);
-    localStorage.setItem('supabaseKey', key);
-    showToast("Ajustes guardados. Recargando...");
-    setTimeout(() => location.reload(), 1000);
-}
-
-function disconnectCloud() {
-    localStorage.removeItem('supabaseUrl');
-    localStorage.removeItem('supabaseKey');
-    showToast("Desconectado de la nube. Recargando...");
-    setTimeout(() => location.reload(), 1000);
-}
-
 // Initialization
 window.onload = async () => {
     await initTheme();
-    await initSupabase();
+    initSync();
     
-    // Seed local data if empty and not in cloud
-    if (!isCloud) {
-        const count = await db.documentos.count();
-        if (count === 0) {
-            const sampleData = [
-                { area: 'GG', titulo: 'Plan Estratégico 2026', version: '01', codigo: 'PE-GG-FO-001', tipo: 'FORMATO', fecha: '2026-01-01' },
-                { area: 'GI', titulo: 'Manual de Calidad', version: '02', codigo: 'PE-GI-FO-001', tipo: 'MANUAL', fecha: '2026-02-15' },
-                { area: 'FO', titulo: 'Checklist de Check-in', version: '00', codigo: 'PM-FO-FO-001', tipo: 'FORMATO', fecha: '2026-05-10' }
-            ];
-            await db.documentos.bulkAdd(sampleData);
-        }
+    // Seed local data if empty
+    const count = await db.documentos.count();
+    if (count === 0) {
+        const sampleData = [
+            { id: 1, area: 'GG', titulo: 'Plan Estratégico 2026', version: '01', codigo: 'PE-GG-FO-001', tipo: 'FORMATO', fecha: '2026-01-01', fecha_actualizacion: Date.now() },
+            { id: 2, area: 'GI', titulo: 'Manual de Calidad', version: '02', codigo: 'PE-GI-FO-001', tipo: 'MANUAL', fecha: '2026-02-15', fecha_actualizacion: Date.now() },
+            { id: 3, area: 'FO', titulo: 'Checklist de Check-in', version: '00', codigo: 'PM-FO-FO-001', tipo: 'FORMATO', fecha: '2026-05-10', fecha_actualizacion: Date.now() }
+        ];
+        await db.documentos.bulkAdd(sampleData);
+        // Also sync samples to Gun
+        sampleData.forEach(d => gunDocs.get(d.id.toString()).put(d));
     }
 
     loadData();
     searchInput.oninput = loadData;
     areaFilter.onchange = loadData;
     lucide.createIcons();
-
-    // Load saved keys into modal if exist
-    document.getElementById('supabaseUrl').value = localStorage.getItem('supabaseUrl') || '';
-    document.getElementById('supabaseKey').value = localStorage.getItem('supabaseKey') || '';
 };
