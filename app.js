@@ -515,9 +515,14 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
    REPOSITORIO DRIVE — Firestore CRUD
    ============================================================ */
 const REPO_COLLECTION = "repositorio";
-let   repoAllDocs     = [];
-let   repoEditId      = null;
-const typeBadge = { PDF:"badge-red", Word:"badge-blue", Excel:"badge-green", ZIP:"badge-amber", Imagen:"badge-violet", Otro:"badge-blue" };
+const DRIVE_FOLDER_ID = "1PWUPMumEFRop6R6cj7Y0PFBHhvqFfpbu";
+const DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}?usp=sharing`;
+// Google Drive API key (same GCP project as Firebase — Drive API must be enabled)
+const DRIVE_API_KEY = "AIzaSyDw-BJLLgqNGWuDwc5m-tSuAz8o-k6G1Ak";
+
+let   repoAllDocs = [];
+let   repoEditId  = null;
+const typeBadge   = { PDF:"badge-red", Word:"badge-blue", Excel:"badge-green", ZIP:"badge-amber", Imagen:"badge-violet", Otro:"badge-blue" };
 
 // Real-time listener
 fsdb.collection(REPO_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snap => {
@@ -525,7 +530,7 @@ fsdb.collection(REPO_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snap =>
   renderRepoTable();
 }, err => console.warn("Repo snapshot error:", err));
 
-// Form submit
+// Form submit — driveLink is always the fixed folder
 document.getElementById("repoForm").onsubmit = async e => {
   e.preventDefault();
   const data = {
@@ -535,7 +540,7 @@ document.getElementById("repoForm").onsubmit = async e => {
     tipo:          document.getElementById("repoTipo").value,
     fecha:         document.getElementById("repoFecha").value,
     descripcion:   document.getElementById("repoDescripcion").value.trim(),
-    driveLink:     document.getElementById("repoDriveLink").value.trim(),
+    driveLink:     DRIVE_FOLDER_URL,   // always the shared folder
     updatedAt:     Date.now(),
   };
   try {
@@ -568,7 +573,7 @@ async function repoEditDoc(id) {
   document.getElementById("repoTipo").value           = doc.tipo          || "PDF";
   document.getElementById("repoFecha").value          = doc.fecha         || "";
   document.getElementById("repoDescripcion").value    = doc.descripcion   || "";
-  document.getElementById("repoDriveLink").value      = doc.driveLink     || "";
+  // driveLink is always the shared folder — no need to populate it
   document.getElementById("repoFormTitle").textContent = "Editando Archivo";
   document.getElementById("repoSubmitBtn").textContent = "Guardar Cambios";
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -616,7 +621,7 @@ function renderRepoTable() {
       <td style="white-space:nowrap">${formatDate(doc.fecha)}</td>
       <td style="max-width:180px;font-size:.82rem;color:var(--text-muted)">${doc.descripcion || "—"}</td>
       <td>
-        <a href="${doc.driveLink}" target="_blank" class="btn btn-secondary btn-icon" title="Abrir en Drive" style="font-size:.75rem">
+        <a href="${DRIVE_FOLDER_URL}" target="_blank" class="btn btn-secondary btn-icon" title="Abrir carpeta en Drive">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         </a>
       </td>
@@ -790,3 +795,87 @@ function toast(msg, type = "success") {
   $("toast-container").appendChild(el);
   setTimeout(() => { el.style.opacity = "0"; el.style.transform = "translateX(100%)"; el.style.transition = ".3s"; setTimeout(() => el.remove(), 300); }, 3500);
 }
+
+/* ============================================================
+   SYNC FROM DRIVE — Lee archivos públicos de la carpeta Drive
+   ============================================================ */
+async function syncFromDrive() {
+  const btn = $("syncDriveBtn");
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="spinning" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Leyendo Drive...`;
+
+  try {
+    // List files in the shared folder using Drive API v3
+    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDER_ID}'+in+parents+and+trashed=false&fields=files(id,name,mimeType,createdTime,webViewLink,size)&orderBy=createdTime+desc&pageSize=100&key=${DRIVE_API_KEY}`;
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`Drive API error: ${res.status}`);
+    const json = await res.json();
+    const files = json.files || [];
+
+    if (!files.length) {
+      toast("La carpeta de Drive está vacía o no es accesible.", "info");
+      return;
+    }
+
+    // Determine type from MIME
+    const mimeToTipo = {
+      "application/pdf":                                               "PDF",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+      "application/msword":                                            "Word",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+      "application/vnd.ms-excel":                                      "Excel",
+      "application/zip":                                               "ZIP",
+      "application/x-zip-compressed":                                  "ZIP",
+      "image/jpeg":  "Imagen",
+      "image/png":   "Imagen",
+      "image/gif":   "Imagen",
+      "image/webp":  "Imagen",
+    };
+
+    // Show Drive files in a modal-like summary
+    let addedCount = 0;
+    for (const f of files) {
+      // Skip if already registered by Drive file ID
+      const exists = repoAllDocs.some(d => d.driveFileId === f.id);
+      if (exists) continue;
+
+      const tipo = mimeToTipo[f.mimeType] || "Otro";
+      const fecha = f.createdTime ? f.createdTime.split("T")[0] : new Date().toISOString().split("T")[0];
+
+      await fsdb.collection(REPO_COLLECTION).add({
+        identificador: "Drive-Sync",
+        area:          "GG",   // default; user can edit
+        nombre:        f.name,
+        tipo,
+        fecha,
+        descripcion:   `Importado desde Drive (${f.mimeType})`,
+        driveLink:     f.webViewLink || DRIVE_FOLDER_URL,
+        driveFileId:   f.id,
+        createdAt:     Date.now(),
+        updatedAt:     Date.now(),
+      });
+      addedCount++;
+    }
+
+    toast(
+      addedCount
+        ? `${addedCount} archivo(s) importados desde Drive \u2713`
+        : "Drive sincronizado — no hay archivos nuevos.",
+      "success"
+    );
+  } catch (err) {
+    console.error("Drive sync error:", err);
+    // If API key doesn't have Drive API enabled, open the folder for manual reference
+    toast("No se pudo leer Drive automáticamente. Abriendo carpeta...", "warning");
+    window.open(DRIVE_FOLDER_URL, "_blank");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Sincronizar Drive`;
+  }
+}
+
+// Wire the Sync button
+const syncDriveBtn = $("syncDriveBtn");
+if (syncDriveBtn) syncDriveBtn.onclick = syncFromDrive;
+
